@@ -13,11 +13,11 @@ Things Claude changed that I didn't understand — explained by Claude. Each pos
 
 ## Commands
 
-| Command | Action |
-| :-- | :-- |
-| `npm run dev` | Dev server at `localhost:4321` |
-| `npm run build` | Build to `./dist/` |
-| `npm run preview` | Preview the production build |
+| Command           | Action                         |
+| :---------------- | :----------------------------- |
+| `npm run dev`     | Dev server at `localhost:4321` |
+| `npm run build`   | Build to `./dist/`             |
+| `npm run preview` | Preview the production build   |
 
 Requires Node >= 22.12.0.
 
@@ -31,12 +31,12 @@ Frontmatter schema (`src/content.config.ts`):
 ---
 title: "..."
 date: 2026-04-23
-description: "..."  # optional
-tags: ["react"]     # optional
+description: "..." # optional
+tags: ["react"] # optional
 ---
 ```
 
-New posts are typically scaffolded by the `/til` Claude Code skill.
+New posts are typically scaffolded by the [`/til` Claude Code skill](https://github.com/starzonmyarmz/dotfiles/tree/main/claude/.claude/skills/til).
 
 ## Deploy
 
