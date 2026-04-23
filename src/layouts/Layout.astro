@@ -22,6 +22,12 @@ const base = import.meta.env.BASE_URL;
     />
     <meta name="generator" content={Astro.generator} />
     {description && <meta name="description" content={description} />}
+    <link
+      rel="alternate"
+      type="application/rss+xml"
+      title={title}
+      href={`${base}rss.xml`}
+    />
     <title>{title}</title>
   </head>
   <body>
@@ -40,6 +46,8 @@ const base = import.meta.env.BASE_URL;
           href="https://github.com/starzonmyarmz/dotfiles/tree/main/claude/.claude/skills/til"
           ><code>/til</code> skill</a
         >
+        <span aria-hidden="true"> · </span>
+        <a href={`${base}rss.xml`}>RSS</a>
       </footer>
     </div>
   </body>
