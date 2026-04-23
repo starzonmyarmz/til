@@ -92,6 +92,19 @@ a:hover {
   margin: 0;
 }
 
+.site-footer {
+  margin-top: 4rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--rule);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--ink-faint);
+}
+.site-footer code {
+  font-family: var(--mono);
+  font-size: 0.95em;
+}
+
 /* Index listing */
 .index-list {
   list-style: none;
