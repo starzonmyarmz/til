@@ -7,6 +7,7 @@ interface Props {
 }
 
 const { title = "TIL", description } = Astro.props;
+const base = import.meta.env.BASE_URL;
 ---
 
 <!doctype html>
@@ -14,8 +15,8 @@ const { title = "TIL", description } = Astro.props;
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="icon" href="/favicon.ico" />
+    <link rel="icon" type="image/svg+xml" href={`${base}favicon.svg`} />
+    <link rel="icon" href={`${base}favicon.ico`} />
     <meta name="generator" content={Astro.generator} />
     {description && <meta name="description" content={description} />}
     <title>{title}</title>
@@ -23,7 +24,7 @@ const { title = "TIL", description } = Astro.props;
   <body>
     <div class="site">
       <header class="site-header">
-        <h1><a href="/">Today I Learned</a></h1>
+        <h1><a href={base}>Today I Learned</a></h1>
         <p class="tag">
           Things Claude changed that I didn't understand — explained… by Claude.
         </p>

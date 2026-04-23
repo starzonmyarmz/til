@@ -27,7 +27,7 @@ const fmt = (d: Date) =>
             {fmt(article.data.date)}
           </time>
           <h2>
-            <a href={`/${article.id}/`}>{article.data.title}</a>
+            <a href={`${import.meta.env.BASE_URL}${article.id}/`}>{article.data.title}</a>
           </h2>
           {article.data.description && <p>{article.data.description}</p>}
         </li>

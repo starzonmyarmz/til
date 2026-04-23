@@ -17,7 +17,7 @@ const fmt = (d: Date) =>
   d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
 ---
 <Layout title={`${article.data.title} — TIL`} description={article.data.description}>
-  <a href="/" class="back-link">← all articles</a>
+  <a href={import.meta.env.BASE_URL} class="back-link">← all articles</a>
   <article>
     <header class="article-header">
       <time datetime={article.data.date.toISOString()}>{fmt(article.data.date)}</time>
