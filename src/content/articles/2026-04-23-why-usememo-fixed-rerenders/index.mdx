@@ -1,0 +1,58 @@
+---
+title: "Why useMemo actually fixed my re-render loop"
+date: 2026-04-23
+description: "Claude wrapped a prop in useMemo and my list stopped thrashing. Here's the reference-equality detail I was missing."
+tags: ["react", "performance"]
+---
+
+import Counter from './Counter.tsx';
+import ReferenceEqualityDemo from './ReferenceEqualityDemo.tsx';
+
+I had a child component memoized with `React.memo`, but it still re-rendered on every keystroke in the parent. Claude's fix was to wrap a prop object in `useMemo`. I didn't immediately understand why that worked — `React.memo` is supposed to prevent re-renders, right?
+
+## The thing I was missing: reference equality
+
+`React.memo` does a shallow equality check on props. For primitives (`string`, `number`, `boolean`) that's intuitive — `"hello" === "hello"` is `true`.
+
+But for objects and arrays, `===` compares **references**, not contents:
+
+```js
+{ id: 1 } === { id: 1 }  // false — two different objects in memory
+```
+
+Every time a component renders, any object literal inside it is a **brand new object**. Same shape, new reference. `React.memo` sees the new reference, assumes the prop changed, and re-renders the child.
+
+<ReferenceEqualityDemo client:load />
+
+Toggle `useMemo` above and click re-render. Without it, the "object" is reconstructed every render and the reference changes. With it, React holds onto the same reference across renders.
+
+## The fix Claude applied
+
+```jsx
+// Before — new object every render
+<UserCard user={{ id, name }} />
+
+// After — same reference across renders
+const user = useMemo(() => ({ id, name }), [id, name]);
+<UserCard user={user} />
+```
+
+The dependency array is the key bit. The memoized value is only rebuilt when `id` or `name` actually change. Otherwise, React hands back the previous reference — and `React.memo`'s shallow check passes.
+
+## When to reach for this
+
+Not always. `useMemo` has its own cost and isn't free. I'd use it when:
+
+- A prop object is passed to a `React.memo`-wrapped child
+- The object/array is derived and its contents rarely change
+- You've measured an actual performance issue
+
+## Bonus: a plain counter
+
+Just to prove MDX + React client components render fine here.
+
+<Counter client:load label="clicks" />
+
+---
+
+Takeaway: **`React.memo` compares references, not values.** Anything that isn't a primitive needs a stable reference or the memo is a no-op.

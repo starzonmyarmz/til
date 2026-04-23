@@ -1,0 +1,37 @@
+---
+import { getCollection } from "astro:content";
+import Layout from "../layouts/Layout.astro";
+
+const articles = (await getCollection("articles")).sort(
+  (a, b) => b.data.date.valueOf() - a.data.date.valueOf(),
+);
+
+const fmt = (d: Date) =>
+  d.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+---
+
+<Layout
+  title="TIL — Claude explains"
+  description="A collection of explanations from Claude about changes it made."
+>
+  <ul class="index-list">
+    {
+      articles.map((article) => (
+        <li class="index-item">
+          <time datetime={article.data.date.toISOString()}>
+            {fmt(article.data.date)}
+          </time>
+          <h2>
+            <a href={`/${article.id}/`}>{article.data.title}</a>
+          </h2>
+          {article.data.description && <p>{article.data.description}</p>}
+        </li>
+      ))
+    }
+  </ul>
+</Layout>

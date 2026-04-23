@@ -1,0 +1,123 @@
+---
+title: "Tightening TypeScript in a billing form"
+date: 2026-04-22
+description: "Six small moves that replaced as-casts and empty-string fallbacks with types that actually match the runtime."
+tags: ["typescript", "react"]
+---
+
+import RecordVsPartial from './RecordVsPartial.jsx';
+import EnumKeys from './EnumKeys.jsx';
+import FromEntries from './FromEntries.jsx';
+import HelperSpread from './HelperSpread.jsx';
+import OptionalChaining from './OptionalChaining.jsx';
+
+I just cleaned up a React billing form. The TypeScript types said one thing, the runtime said another — and the component was full of `as` casts and `?? ""` fallbacks patching over the gap. This walks through the techniques that made the cleanup work.
+
+The patient: `app/javascript/components/billing/edit_address_modal.tsx` and the shared `app/javascript/types/billing.ts`. You'll recognize the field names (address, city, state, zip_code) in the demos below.
+
+## 1. `Record` vs `Partial<Record>`
+
+TypeScript has two common ways to type "an object keyed by these names." They look similar. They behave very differently.
+
+```ts
+// loose: every key is optional, values can be undefined
+type Loose = Partial<Record<"address" | "city", string>>
+
+// strict: every key is required and always a string
+type Strict = Record<"address" | "city", string>
+```
+
+**What to notice:** the billing form used `Partial<Record>` but always populated every key on initialization. That mismatch meant every `fields[name]` read returned `string | undefined`, forcing fallbacks that never actually ran. Switching to `Record` matched the invariant.
+
+<RecordVsPartial client:load />
+
+## 2. Enums as keys instead of `string`
+
+The old `handleFieldChange` took `name: string`. Inside, it had to keep casting back: `formErrors[name as FormFieldName]`. Three casts in one short function.
+
+```ts
+enum FormFieldName {
+  Address = "address",
+  City = "city",
+  State = "state",
+  ZipCode = "zip_code",
+}
+
+// before
+function handleFieldChange({ name }: { name: string }) {
+  delete formErrors[name as FormFieldName]  // cast
+}
+
+// after
+function handleFieldChange({ name }: { name: FormFieldName }) {
+  delete formErrors[name]  // no cast
+}
+```
+
+**What to notice:** when the type of `name` matches the type of the object's keys, indexing Just Works. The cast was a smell pointing at the real fix.
+
+<EnumKeys client:load />
+
+## 3. `Object.fromEntries` beats `reduce` here
+
+The original built `initialFields` with a `reduce`, spreading the accumulator on every step. That's O(n²) in allocation and reads awkwardly. For this exact shape — array of keys → object — `Object.fromEntries` is cleaner and linear.
+
+```ts
+// before
+const initialFields = Object.values(FormFieldName).reduce(
+  (fields, name) => ({ ...fields, [name]: organization[name] }),
+  {}
+)
+
+// after
+const initialFields = Object.fromEntries(
+  Object.values(FormFieldName).map(name => [name, organization[name] ?? ""])
+)
+```
+
+**What to notice:** the intent is literally "pair each name with its value, then make an object." `fromEntries` says that; `reduce` hides it.
+
+<FromEntries client:load />
+
+## 4. Generic `useState` over a cast
+
+```tsx
+// before
+const [formErrors, setFormErrors] = useState({} as FormErrorsState)
+
+// after
+const [formErrors, setFormErrors] = useState<FormErrorsState>({})
+```
+
+**What to notice:** `{} as T` tells TypeScript "trust me, this empty object is a `T`." That works by accident — an empty object happens to be assignable to `Partial<Record>` — but it's a lie in general. `useState<T>` says "the state is a `T`; the initial value must conform." No trust required.
+
+(No interactive demo — the snippet above is the core idea.)
+
+## 5. A helper to kill repeated prop spreading
+
+Four inputs, each needing the same two error-display props. That's eight lines of duplication and two places per field to forget a change. A tiny helper collapses it.
+
+```tsx
+function errorProps(field: FormFieldName) {
+  const error = formErrors[field]
+  return { description: error?.join(", "), invalid: Boolean(error) }
+}
+
+// usage
+<Input {...errorProps(FormFieldName.Address)} />
+<Input {...errorProps(FormFieldName.City)} />
+```
+
+**What to notice:** the helper captures a *mapping* — field name to display props — not a generic abstraction. One source of truth for how an error shows.
+
+<HelperSpread client:load />
+
+## 6. Optional chaining + nullish coalescing
+
+With tighter types, you still need to handle "no error for this field yet." `error?.join(", ")` returns `undefined` if `error` is missing. `Boolean(error)` turns it into a clean `true`/`false`. And for values that might be `undefined`, `?? ""` gives a safe default.
+
+<OptionalChaining client:load />
+
+## Where to go next
+
+The same moves apply elsewhere. When you see a type-alias that's just `string`, delete it. When you see `as SomeType` scattered around, check whether the source type should be tighter. When you see a `reduce` building an object from an array of keys, reach for `Object.fromEntries`.

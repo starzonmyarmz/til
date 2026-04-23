@@ -1,0 +1,31 @@
+---
+import { getCollection, render } from 'astro:content';
+import Layout from '../layouts/Layout.astro';
+
+export async function getStaticPaths() {
+  const articles = await getCollection('articles');
+  return articles.map((article) => ({
+    params: { slug: article.id },
+    props: { article },
+  }));
+}
+
+const { article } = Astro.props;
+const { Content } = await render(article);
+
+const fmt = (d: Date) =>
+  d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
+---
+<Layout title={`${article.data.title} — TIL`} description={article.data.description}>
+  <a href="/" class="back-link">← all articles</a>
+  <article>
+    <header class="article-header">
+      <time datetime={article.data.date.toISOString()}>{fmt(article.data.date)}</time>
+      <h1>{article.data.title}</h1>
+      {article.data.description && <p class="description">{article.data.description}</p>}
+    </header>
+    <div class="article-body">
+      <Content />
+    </div>
+  </article>
+</Layout>

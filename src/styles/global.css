@@ -1,0 +1,408 @@
+:root {
+  --bg: #faf8f3;
+  --bg-elev: #ffffff;
+  --ink: #1a1a1a;
+  --ink-soft: #55524c;
+  --ink-faint: #8a867e;
+  --accent: #b34b2e;
+  --accent-soft: #f4d9cf;
+  --rule: #e6e1d6;
+  --code-bg: #1f1d1a;
+  --code-ink: #eae6dc;
+  --radius: 6px;
+  --mono: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+  --sans:
+    -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui,
+    sans-serif;
+  --serif:
+    "Iowan Old Style", "Palatino Linotype", "Palatino", ui-serif, Georgia, serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17150f;
+    --bg-elev: #1e1b14;
+    --ink: #eeead8;
+    --ink-soft: #bdb8a6;
+    --ink-faint: #7a7563;
+    --accent: #e6825f;
+    --accent-soft: #3a2319;
+    --rule: #2c2820;
+    --code-bg: #0c0b08;
+    --code-ink: #eae6dc;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 20px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  text-wrap: pretty;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 120ms ease;
+}
+a:hover {
+  border-bottom-color: var(--accent);
+}
+
+.site {
+  max-width: 80ch;
+  margin: 0 auto;
+  padding: 3rem;
+}
+
+.site-header {
+  margin-bottom: 3rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.site-header h1 {
+  font-family: var(--sans);
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin: 0;
+}
+.site-header h1 a {
+  color: var(--ink);
+  border: 0;
+}
+.site-header .tag {
+  color: var(--ink-faint);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  margin: 0;
+}
+
+/* Index listing */
+.index-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.index-item {
+  padding: 1.25rem 0;
+}
+.index-item time {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--ink-faint);
+  display: block;
+  margin-bottom: 0.35rem;
+}
+.index-item h2 {
+  font-family: var(--serif);
+  font-size: 1.35rem;
+  font-weight: 600;
+  margin: 0 0 0.35rem;
+  line-height: 1.25;
+}
+.index-item h2 a {
+  color: var(--ink);
+  border: 0;
+}
+.index-item h2 a:hover {
+  color: var(--accent);
+}
+.index-item p {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.98rem;
+}
+.index-empty {
+  color: var(--ink-faint);
+  font-style: italic;
+  padding: 2rem 0;
+}
+
+/* Article page */
+.article-header {
+  margin-bottom: 2.5rem;
+}
+.article-header time {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.article-header h1 {
+  font-family: var(--serif);
+  font-size: 2.25rem;
+  font-weight: 700;
+  line-height: 1.15;
+  margin: 0.4rem 0 0.75rem;
+  letter-spacing: -0.01em;
+}
+.article-header .description {
+  color: var(--ink-soft);
+  font-size: 1.1rem;
+  margin: 0;
+}
+
+.article-body {
+  font-size: 1.05rem;
+}
+.article-body h2 {
+  font-family: var(--sans);
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin-top: 2.5rem;
+  margin-bottom: 0.75rem;
+}
+.article-body h3 {
+  font-family: var(--sans);
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-top: 2rem;
+  margin-bottom: 0.5rem;
+}
+.article-body p {
+  margin: 0 0 1.15rem;
+}
+.article-body ul,
+.article-body ol {
+  padding-left: 1.5rem;
+  margin: 0 0 1.15rem;
+}
+.article-body li {
+  margin-bottom: 0.35rem;
+}
+.article-body blockquote {
+  border-left: 3px solid var(--accent);
+  margin: 1.25rem 0;
+  padding: 0.2rem 0 0.2rem 1rem;
+  color: var(--ink-soft);
+  font-style: italic;
+}
+.article-body hr {
+  border: 0;
+  border-top: 1px solid var(--rule);
+  margin: 2.5rem 0;
+}
+.article-body code {
+  font-family: var(--mono);
+  font-size: 0.92em;
+  background: var(--accent-soft);
+  color: var(--ink);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+}
+.article-body pre {
+  background: var(--code-bg);
+  color: var(--code-ink);
+  padding: 1rem 1.1rem;
+  border-radius: var(--radius);
+  overflow-x: auto;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  margin: 0 0 1.25rem;
+}
+.article-body pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+}
+
+/* Back link */
+.back-link {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--ink-faint);
+  margin-bottom: 2rem;
+  border: 0;
+}
+.back-link:hover {
+  color: var(--accent);
+}
+
+/* Interactive demo shell used inside articles */
+.demo {
+  background: var(--bg-elev);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  margin: 1.5rem 0;
+  font-family: var(--sans);
+  font-size: 0.95rem;
+}
+.demo-label {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 0.75rem;
+}
+
+/* Buttons: outlined by default, filled when .active or :hover */
+.demo button {
+  font-family: var(--sans);
+  font-size: 0.95rem;
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--ink);
+  padding: 0.4rem 0.85rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition:
+    transform 80ms ease,
+    background 120ms ease,
+    color 120ms ease;
+}
+.demo button:hover:not(:disabled) {
+  background: var(--ink);
+  color: var(--bg);
+}
+.demo button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.demo button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.demo button.active {
+  background: var(--ink);
+  color: var(--bg);
+}
+
+/* Inputs */
+.demo input[type="range"] {
+  width: 100%;
+}
+.demo input[type="text"],
+.demo input[type="number"] {
+  font-family: var(--mono);
+  font-size: 0.9rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--ink);
+}
+.demo .txt {
+  font: inherit;
+  font-family: var(--mono);
+  font-size: 0.9rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--ink);
+  width: auto;
+  margin: 0;
+}
+.demo label {
+  display: block;
+  font-size: 0.9rem;
+  margin-top: 0.5rem;
+}
+
+/* Layout helpers */
+.demo .row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.demo .panel {
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 0.85rem 1rem;
+  margin: 0.9rem 0;
+}
+
+/* Code-like output inside demos */
+.demo .codelike {
+  font-family: var(--mono);
+  font-size: 0.88rem;
+  padding: 0.15rem 0;
+  color: var(--ink);
+}
+.demo .codelike.muted {
+  color: var(--ink-faint);
+}
+.demo .typelabel {
+  color: var(--ink-faint);
+  font-style: italic;
+  margin-right: 0.4rem;
+}
+.demo .arrow {
+  text-align: center;
+  color: var(--ink-faint);
+  font-size: 1.2rem;
+  margin: 0.1rem 0;
+}
+.demo .hint {
+  font-size: 0.88rem;
+  color: var(--ink-soft);
+  margin: 0.6rem 0 0;
+  font-family: var(--sans);
+}
+.demo pre {
+  background: var(--code-bg);
+  color: var(--code-ink);
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius);
+  overflow-x: auto;
+  font-size: 0.85rem;
+  margin: 0;
+}
+.demo pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+}
+
+/* Field preview (used in form-style demos) */
+.demo .fieldpreview {
+  margin-top: 1rem;
+  border: 2px solid var(--rule);
+  border-radius: 6px;
+  padding: 0.75rem;
+  background: var(--bg);
+}
+.demo .fieldpreview .label {
+  font-size: 0.8rem;
+  color: var(--ink-faint);
+  display: block;
+  margin: 0;
+}
+.demo .fieldpreview .fakeinput {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--bg-elev);
+  margin-top: 0.25rem;
+  font-family: var(--mono);
+  font-size: 0.9rem;
+}
+.demo .fieldpreview .errorText {
+  color: #c0392b;
+  font-size: 0.85rem;
+  margin-top: 0.4rem;
+}
