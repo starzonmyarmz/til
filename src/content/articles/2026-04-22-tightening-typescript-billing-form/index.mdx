@@ -15,7 +15,7 @@ I just cleaned up a React billing form. The TypeScript types said one thing, the
 
 The patient: `app/javascript/components/billing/edit_address_modal.tsx` and the shared `app/javascript/types/billing.ts`. You'll recognize the field names (address, city, state, zip_code) in the demos below.
 
-## 1. `Record` vs `Partial<Record>`
+## `Record` vs `Partial<Record>`
 
 TypeScript has two common ways to type "an object keyed by these names." They look similar. They behave very differently.
 
@@ -31,7 +31,7 @@ type Strict = Record<"address" | "city", string>
 
 <RecordVsPartial client:load />
 
-## 2. Enums as keys instead of `string`
+## Enums as keys instead of `string`
 
 The old `handleFieldChange` took `name: string`. Inside, it had to keep casting back: `formErrors[name as FormFieldName]`. Three casts in one short function.
 
@@ -58,7 +58,7 @@ function handleFieldChange({ name }: { name: FormFieldName }) {
 
 <EnumKeys client:load />
 
-## 3. `Object.fromEntries` beats `reduce` here
+## `Object.fromEntries` beats `reduce` here
 
 The original built `initialFields` with a `reduce`, spreading the accumulator on every step. That's O(n²) in allocation and reads awkwardly. For this exact shape — array of keys → object — `Object.fromEntries` is cleaner and linear.
 
@@ -79,7 +79,7 @@ const initialFields = Object.fromEntries(
 
 <FromEntries client:load />
 
-## 4. Generic `useState` over a cast
+## Generic `useState` over a cast
 
 ```tsx
 // before
@@ -93,7 +93,7 @@ const [formErrors, setFormErrors] = useState<FormErrorsState>({})
 
 (No interactive demo — the snippet above is the core idea.)
 
-## 5. A helper to kill repeated prop spreading
+## A helper to kill repeated prop spreading
 
 Four inputs, each needing the same two error-display props. That's eight lines of duplication and two places per field to forget a change. A tiny helper collapses it.
 
@@ -112,7 +112,7 @@ function errorProps(field: FormFieldName) {
 
 <HelperSpread client:load />
 
-## 6. Optional chaining + nullish coalescing
+## Optional chaining + nullish coalescing
 
 With tighter types, you still need to handle "no error for this field yet." `error?.join(", ")` returns `undefined` if `error` is missing. `Boolean(error)` turns it into a clean `true`/`false`. And for values that might be `undefined`, `?? ""` gives a safe default.
 

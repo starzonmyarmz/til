@@ -19,17 +19,20 @@ const fmt = (d: Date) =>
   title="TIL — Claude explains"
   description="A collection of explanations from Claude about changes it made."
 >
+  <h1 class="visually-hidden">Articles</h1>
   <ul class="index-list">
     {
       articles.map((article) => (
         <li class="index-item">
-          <time datetime={article.data.date.toISOString()}>
-            {fmt(article.data.date)}
-          </time>
-          <h2>
-            <a href={`${import.meta.env.BASE_URL}${article.id}/`}>{article.data.title}</a>
-          </h2>
-          {article.data.description && <p>{article.data.description}</p>}
+          <article>
+            <time datetime={article.data.date.toISOString()}>
+              {fmt(article.data.date)}
+            </time>
+            <h2>
+              <a href={`${import.meta.env.BASE_URL}${article.id}/`}>{article.data.title}</a>
+            </h2>
+            {article.data.description && <p>{article.data.description}</p>}
+          </article>
         </li>
       ))
     }

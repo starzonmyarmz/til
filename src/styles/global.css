@@ -49,6 +49,7 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   text-wrap: pretty;
+  overflow-wrap: break-word;
 }
 
 a {
@@ -73,7 +74,7 @@ a:hover {
   border-bottom: 1px solid var(--rule);
 }
 
-.site-header h1 {
+.site-header .site-brand {
   font-family: var(--sans);
   font-size: 1.1rem;
   font-weight: 700;
@@ -81,8 +82,20 @@ a:hover {
   text-transform: uppercase;
   margin: 0;
 }
-.site-header h1 a {
+.site-header .site-brand a {
   color: var(--ink);
+  border: 0;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
   border: 0;
 }
 .site-header .tag {
@@ -418,4 +431,53 @@ a:hover {
   color: #c0392b;
   font-size: 0.85rem;
   margin-top: 0.4rem;
+}
+
+@media (max-width: 640px) {
+  html,
+  body {
+    font-size: 17px;
+  }
+  .site {
+    padding: 1.25rem;
+  }
+  .site-header {
+    margin-bottom: 2rem;
+  }
+  .article-header {
+    margin-bottom: 1.75rem;
+  }
+  .article-header h1 {
+    font-size: 1.65rem;
+  }
+  .article-body {
+    font-size: 1rem;
+  }
+  .article-body h2 {
+    font-size: 1.15rem;
+    margin-top: 2rem;
+  }
+  .article-body h3 {
+    font-size: 1.02rem;
+    margin-top: 1.5rem;
+  }
+  .article-body pre {
+    padding: 0.85rem;
+    font-size: 0.82rem;
+    border-radius: 0;
+    margin-left: -1.25rem;
+    margin-right: -1.25rem;
+  }
+  .demo {
+    padding: 1rem;
+  }
+  .demo pre {
+    font-size: 0.78rem;
+  }
+  .index-item h2 {
+    font-size: 1.15rem;
+  }
+  .site-footer {
+    margin-top: 3rem;
+  }
 }
