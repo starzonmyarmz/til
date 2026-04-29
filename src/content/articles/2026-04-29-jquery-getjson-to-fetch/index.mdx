@@ -1,0 +1,98 @@
+---
+title: "Replacing jQuery getJSON with fetch and async/await"
+date: 2026-04-29
+description: "Converting a jQuery polling helper to vanilla fetch surfaced two gotchas — fetch's quiet HTTP errors and the difference between transport failure and application failure."
+tags: ["javascript", "react", "rails"]
+---
+
+import PollingDemo from './PollingDemo.tsx';
+import ErrorPathsDemo from './ErrorPathsDemo.tsx';
+
+I was tidying up `delete_organization_modal.tsx` in our Rails + React app and ran into a leftover `$.getJSON` from the jQuery era. The component polls an org-deletion job until it completes, then redirects. Small function, but the conversion to `fetch` + `async/await` was a good lens on a few things I hadn't internalized.
+
+## The original
+
+```tsx
+const checkForCompletion = (deletionId: number, cb: () => void) => {
+  $.getJSON(`/org_deletions/${deletionId}`)
+    .done((data) => {
+      setStatus(data.status)
+      if (data.completed_at) {
+        cb()
+      } else {
+        setTimeout(checkForCompletion, 2000, deletionId, cb)
+      }
+    })
+    .fail((_jqxhr) => cb())
+}
+```
+
+`$.getJSON` returns a jqXHR (jQuery's Promise-shaped object). `.done` runs on HTTP success, `.fail` on anything that's not. Either way, a callback fires.
+
+## The fetch version
+
+```tsx
+const checkForCompletion = async (deletionId: number, cb: () => void) => {
+  try {
+    const response = await fetch(`/org_deletions/${deletionId}`, {
+      headers: { Accept: "application/json" },
+    })
+    if (!response.ok) {
+      cb()
+      return
+    }
+    const data = await response.json()
+    setStatus(data.status)
+    if (data.completed_at) {
+      cb()
+    } else {
+      setTimeout(checkForCompletion, 2000, deletionId, cb)
+    }
+  } catch {
+    cb()
+  }
+}
+```
+
+Three things to notice — none surprising on their own, but worth saying out loud.
+
+## Gotcha 1: fetch only rejects on network failure
+
+`$.getJSON`'s `.fail` fires for any non-2xx response **and** network errors. `fetch` only rejects the promise for network-level failure (DNS, offline, CORS preflight). A 500 from the server resolves the promise normally, with `response.ok === false`.
+
+So a `try/catch` alone isn't enough. You need both:
+
+```tsx
+if (!response.ok) cb()   // app-level failure (4xx, 5xx)
+} catch { cb() }         // transport-level failure (offline, DNS)
+```
+
+Skip the `response.ok` check and a 500 will silently parse a JSON error body and break further down.
+
+<ErrorPathsDemo client:load />
+
+## Gotcha 2: you parse JSON yourself
+
+`$.getJSON` auto-parses the body. `fetch` doesn't — `response.json()` is its own awaited call, and it can throw if the body isn't valid JSON. That's a third failure path your `catch` already covers, but worth knowing it exists.
+
+I added `Accept: application/json` to make Rails' `respond_to` block pick the JSON branch unambiguously, regardless of routing or default-format quirks.
+
+## Gotcha 3: recursive setTimeout still works fine
+
+Async functions can call themselves through `setTimeout`. The next call kicks off a new promise; the original one has already resolved by the time `setTimeout` fires. No leaks, no chained-promise weirdness. The polling pattern survives the rewrite untouched.
+
+<PollingDemo client:load />
+
+The demo above runs the same shape — poll, update status, recurse via setTimeout — against a mock endpoint. Watch the apps tick from `processing` to `complete`.
+
+## What about CSRF?
+
+I asked myself this mid-conversion. No — CSRF tokens are only required for state-changing methods (POST/PUT/PATCH/DELETE). Rails skips the check on GET. The `$.ajax` DELETE in the same file still needs `X-CSRF-Token`; the GET poll does not.
+
+## What about Stimulus or Turbo?
+
+Also no. Stimulus and Turbo shine when the view is server-rendered ERB with light JS sprinkled on. This component is React — the polling state drives `useState`-backed UI. Turbo Streams could replace polling with a server-pushed update over ActionCable, but that's a bigger refactor and still wouldn't change the in-component request layer.
+
+---
+
+Takeaway: `fetch` looks like a one-for-one swap, but **`response.ok` is the line that protects you from silent application errors**. jQuery hid that distinction inside `.fail`. Vanilla forces you to think about it.
