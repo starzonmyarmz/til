@@ -8,4 +8,9 @@ export default defineConfig({
   site: 'https://til.iamdanielmarino.com',
   integrations: [mdx(), react()],
   devToolbar: { enabled: false },
+  markdown: {
+    shikiConfig: {
+      theme: 'github-dark-default',
+    },
+  },
 });
