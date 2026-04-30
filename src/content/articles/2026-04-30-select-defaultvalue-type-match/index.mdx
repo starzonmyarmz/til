@@ -1,0 +1,105 @@
+---
+title: "Select defaultValue must match the option value type"
+date: 2026-04-30
+description: "A boolean defaultValue won’t select an option whose value is a string. Pick one type end-to-end, normalize at the boundary, and don’t mutate props on the way through."
+tags: ["react", "typescript", "forms"]
+---
+
+import TypeMismatchDemo from './TypeMismatchDemo.tsx';
+import NormalizeDemo from './NormalizeDemo.tsx';
+
+A staff-only modal had two `<Select>` fields whose `defaultValue` props seemed to do nothing. The dropdowns rendered with no option highlighted, even though the underlying setting was clearly `true` or `false`. The bug was a single line.
+
+## The mismatch
+
+The options were declared with string values:
+
+```tsx
+const SELECT_OPTIONS = [
+  { label: "true", value: "true" },
+  { label: "false", value: "false" },
+]
+```
+
+…and the props passed a boolean:
+
+```tsx
+<Select
+  options={SELECT_OPTIONS}
+  defaultValue={!!settings.credentialed}
+/>
+```
+
+The Select component picks the matching option with strict equality. `true === "true"` is `false`. No option matched, so nothing was selected. The dropdown looked empty by default.
+
+There are two equally valid fixes — pick a type and stay in it.
+
+<TypeMismatchDemo client:load />
+
+## Booleans end-to-end is cleaner
+
+Strings would also work, but the source data is conceptually boolean. Let the option values be booleans too:
+
+```tsx
+const SELECT_OPTIONS = [
+  { label: "true", value: true },
+  { label: "false", value: false },
+]
+
+<Select options={SELECT_OPTIONS} defaultValue={settings.credentialed} />
+```
+
+Form serialization still produces `"true"` or `"false"` over the wire — the server doesn’t notice. The win is one less coercion site and a `defaultValue` whose type matches the field it’s setting.
+
+## Don’t mutate the prop on the way through
+
+The original code normalized the incoming settings like this:
+
+```tsx
+const settings =
+  (staffOnlyDetails && staffOnlyDetails.settings) || ({} as StaffOnlySettings)
+settings.allow_mvr = (settings.allow_mvr || false).toString() === "true"
+settings.credentialed = (settings.credentialed || false).toString() === "true"
+settings.packages_match = (settings.packages_match || false).toString() === "true"
+```
+
+Two problems hide in there. First, `settings` is the same object reference as `staffOnlyDetails.settings` — those assignments mutate the prop. The next render reads back already-coerced data, which is fine until something else upstream cares. Second, the type stays `boolean | string` even after normalization, so every consumer downstream still has to handle both.
+
+A fresh object solves both:
+
+```tsx
+const raw = staffOnlyDetails?.settings
+const settings: StaffOnlySettings = {
+  credentialed: String(raw?.credentialed) === "true",
+  allow_mvr: String(raw?.allow_mvr) === "true",
+  packages_match: String(raw?.packages_match) === "true",
+}
+```
+
+Now the prop is untouched and the local `settings` is narrowed to `boolean` — no union to defend against further down.
+
+<NormalizeDemo client:load />
+
+## Two types for two shapes
+
+When the inbound shape is messy and the working shape is clean, give them separate names:
+
+```tsx
+interface RawStaffOnlySettings {
+  credentialed?: boolean | string
+  packages_match?: boolean | string
+  allow_mvr?: boolean | string
+}
+
+interface StaffOnlySettings {
+  credentialed: boolean
+  packages_match: boolean
+  allow_mvr: boolean
+}
+```
+
+The boundary type accepts what the API actually sends. The internal type expresses what the rest of the component is allowed to assume. The normalization step is the only place both names appear.
+
+## Takeaway
+
+For dropdown components that match by strict equality, the option `value` and the `defaultValue` must share a type — boolean to boolean, string to string. Decide which type owns the field, normalize once at the boundary into a fresh object, and keep the rest of the component honest with a narrowed type.
