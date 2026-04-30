@@ -8,19 +8,19 @@ tags: ["javascript", "react", "rails"]
 import PollingDemo from './PollingDemo.tsx';
 import ErrorPathsDemo from './ErrorPathsDemo.tsx';
 
-I was tidying up `delete_organization_modal.tsx` in our Rails + React app and ran into a leftover `$.getJSON` from the jQuery era. The component polls an org-deletion job until it completes, then redirects. Small function, but the conversion to `fetch` + `async/await` was a good lens on a few things I hadn't internalized.
+A cleanup pass through a delete-confirmation modal in a Rails + React app surfaced a leftover `$.getJSON` from the jQuery era. The component polls a background job until it completes, then redirects. Small function, but the conversion to `fetch` + `async/await` is a good lens on a few things worth saying out loud.
 
 ## The original
 
 ```tsx
-const checkForCompletion = (deletionId: number, cb: () => void) => {
-  $.getJSON(`/org_deletions/${deletionId}`)
+const checkForCompletion = (jobId: number, cb: () => void) => {
+  $.getJSON(`/jobs/${jobId}`)
     .done((data) => {
       setStatus(data.status)
       if (data.completed_at) {
         cb()
       } else {
-        setTimeout(checkForCompletion, 2000, deletionId, cb)
+        setTimeout(checkForCompletion, 2000, jobId, cb)
       }
     })
     .fail((_jqxhr) => cb())
@@ -32,9 +32,9 @@ const checkForCompletion = (deletionId: number, cb: () => void) => {
 ## The fetch version
 
 ```tsx
-const checkForCompletion = async (deletionId: number, cb: () => void) => {
+const checkForCompletion = async (jobId: number, cb: () => void) => {
   try {
-    const response = await fetch(`/org_deletions/${deletionId}`, {
+    const response = await fetch(`/jobs/${jobId}`, {
       headers: { Accept: "application/json" },
     })
     if (!response.ok) {
@@ -46,7 +46,7 @@ const checkForCompletion = async (deletionId: number, cb: () => void) => {
     if (data.completed_at) {
       cb()
     } else {
-      setTimeout(checkForCompletion, 2000, deletionId, cb)
+      setTimeout(checkForCompletion, 2000, jobId, cb)
     }
   } catch {
     cb()
@@ -60,7 +60,7 @@ Three things to notice — none surprising on their own, but worth saying out lo
 
 `$.getJSON`'s `.fail` fires for any non-2xx response **and** network errors. `fetch` only rejects the promise for network-level failure (DNS, offline, CORS preflight). A 500 from the server resolves the promise normally, with `response.ok === false`.
 
-So a `try/catch` alone isn't enough. You need both:
+So a `try/catch` alone isn't enough. Both checks are needed:
 
 ```tsx
 if (!response.ok) cb()   // app-level failure (4xx, 5xx)
@@ -71,11 +71,12 @@ Skip the `response.ok` check and a 500 will silently parse a JSON error body and
 
 <ErrorPathsDemo client:load />
 
-## Gotcha 2: you parse JSON yourself
+## Gotcha 2: JSON parsing is manual
 
-`$.getJSON` auto-parses the body. `fetch` doesn't — `response.json()` is its own awaited call, and it can throw if the body isn't valid JSON. That's a third failure path your `catch` already covers, but worth knowing it exists.
+`$.getJSON` auto-parses the body. `fetch` doesn't — `response.json()` is its own awaited call, and it can throw if the body isn't valid JSON. That's a third failure path the `catch` already covers, but worth knowing it exists.
 
-I added `Accept: application/json` to make Rails' `respond_to` block pick the JSON branch unambiguously, regardless of routing or default-format quirks.
+Adding `Accept: application/json` makes Rails' `respond_to` block pick the JSON branch unambiguously, regardless of routing or default-format quirks.
+
 
 ## Gotcha 3: recursive setTimeout still works fine
 
@@ -83,11 +84,11 @@ Async functions can call themselves through `setTimeout`. The next call kicks of
 
 <PollingDemo client:load />
 
-The demo above runs the same shape — poll, update status, recurse via setTimeout — against a mock endpoint. Watch the apps tick from `processing` to `complete`.
+The demo above runs the same shape — poll, update status, recurse via setTimeout — against a mock endpoint. The status ticks from `processing` to `complete`.
 
 ## What about CSRF?
 
-I asked myself this mid-conversion. No — CSRF tokens are only required for state-changing methods (POST/PUT/PATCH/DELETE). Rails skips the check on GET. The `$.ajax` DELETE in the same file still needs `X-CSRF-Token`; the GET poll does not.
+Worth checking mid-conversion. No — CSRF tokens are only required for state-changing methods (POST/PUT/PATCH/DELETE). Rails skips the check on GET. The `$.ajax` DELETE in the same file still needs `X-CSRF-Token`; the GET poll does not.
 
 ## What about Stimulus or Turbo?
 
@@ -95,4 +96,4 @@ Also no. Stimulus and Turbo shine when the view is server-rendered ERB with ligh
 
 ---
 
-Takeaway: `fetch` looks like a one-for-one swap, but **`response.ok` is the line that protects you from silent application errors**. jQuery hid that distinction inside `.fail`. Vanilla forces you to think about it.
+Takeaway: `fetch` looks like a one-for-one swap, but **`response.ok` is the line that prevents silent application errors**. jQuery hid that distinction inside `.fail`. Vanilla forces it back into the open.

@@ -11,9 +11,9 @@ import FromEntries from './FromEntries.jsx';
 import HelperSpread from './HelperSpread.jsx';
 import OptionalChaining from './OptionalChaining.jsx';
 
-I just cleaned up a React billing form. The TypeScript types said one thing, the runtime said another — and the component was full of `as` casts and `?? ""` fallbacks patching over the gap. This walks through the techniques that made the cleanup work.
+A React billing-address form needed a cleanup. The TypeScript types said one thing, the runtime said another — and the component was full of `as` casts and `?? ""` fallbacks patching over the gap. This walks through the techniques that made the cleanup work.
 
-The patient: `app/javascript/components/billing/edit_address_modal.tsx` and the shared `app/javascript/types/billing.ts`. You'll recognize the field names (address, city, state, zip_code) in the demos below.
+The patient: an address-edit modal backed by a shared billing types module. The field names (address, city, state, zip_code) carry through into the demos below.
 
 ## `Record` vs `Partial<Record>`
 
@@ -114,10 +114,10 @@ function errorProps(field: FormFieldName) {
 
 ## Optional chaining + nullish coalescing
 
-With tighter types, you still need to handle "no error for this field yet." `error?.join(", ")` returns `undefined` if `error` is missing. `Boolean(error)` turns it into a clean `true`/`false`. And for values that might be `undefined`, `?? ""` gives a safe default.
+Tighter types still leave room for "no error for this field yet." `error?.join(", ")` returns `undefined` if `error` is missing. `Boolean(error)` turns that into a clean `true`/`false`. And for values that might be `undefined`, `?? ""` gives a safe default.
 
 <OptionalChaining client:load />
 
 ## Where to go next
 
-The same moves apply elsewhere. When you see a type-alias that's just `string`, delete it. When you see `as SomeType` scattered around, check whether the source type should be tighter. When you see a `reduce` building an object from an array of keys, reach for `Object.fromEntries`.
+The same moves apply elsewhere. A type-alias that's just `string`? Delete it. `as SomeType` scattered around? The source type probably should be tighter. A `reduce` building an object from an array of keys? Reach for `Object.fromEntries`.
