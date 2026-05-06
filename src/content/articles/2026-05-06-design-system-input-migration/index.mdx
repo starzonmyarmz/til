@@ -1,0 +1,121 @@
+---
+title: "What changes when you swap a bare input for a design system component"
+date: 2026-05-06
+description: "Migrating from a raw input element to a design system Input surfaces several small improvements: label colocation, a shared validation pattern, a TypeScript Omit trap, and the right way to use async/await inside useEffect."
+tags: ["react", "typescript"]
+---
+
+import AsyncEffectDemo from './AsyncEffectDemo.tsx';
+
+Replacing a bare `<input>` with a design system `Input` component is usually a one-line swap — until it isn't. The migration touches props, TypeScript types, and the surrounding template. Here's what came up and why each change was worth making.
+
+## Label and description move into the component
+
+With a raw `<input>`, the label lives in the template as a separate element:
+
+```erb
+<label for="contact_email" class="form-label">Church Email</label>
+<!-- ... helper text in a separate disclosure widget ... -->
+<input id="contact_email" type="email" />
+```
+
+After the migration, the label and helper text become props on the component itself:
+
+```tsx
+<Input
+  label="Church Email"
+  description="If members have questions, this is where they'd write."
+  id="contact_email"
+  type="email"
+/>
+```
+
+The template loses two elements; the component gains one source of truth. The design system owns the label–input association and the layout of the description text automatically.
+
+## One string constant drives both the regex and the pattern attribute
+
+Before the migration the component held a regex literal used for a JavaScript guard. After, the same validation needed to power the browser's native `pattern` attribute too. The trick: define the pattern as a string, not a literal, and derive the `RegExp` from it.
+
+```ts
+const EMAIL_PATTERN = "\\S+@\\S{2,}\\.\\S{2,}"
+const EMAIL_REGEX = new RegExp(EMAIL_PATTERN)
+```
+
+```tsx
+<Input
+  type="email"
+  pattern={EMAIL_PATTERN}
+  // ...
+/>
+```
+
+The two stay in sync automatically — change the string, both the JS validation and the HTML attribute update.
+
+## TypeScript's Omit catches a prop conflict
+
+`React.InputHTMLAttributes<HTMLInputElement>` includes `size?: number` (the HTML attribute that sets character width). Design system components often redefine `size` as a string union — `"sm" | "md" | "lg"`. Spreading the full HTML attrs type onto a component that expects the string union produces a type error:
+
+```
+Type 'number' is not assignable to type 'InputSize | undefined'.
+```
+
+The fix: `Omit` the conflicting keys before spreading.
+
+```ts
+htmlAttributes?: Omit<
+  React.InputHTMLAttributes<HTMLInputElement>,
+  "type" | "size"
+>
+```
+
+`"type"` is omitted for the same reason — the component hardcodes `type="email"` and shouldn't let callers override it through the escape hatch.
+
+## useCallback only helps when a function crosses a render boundary
+
+The original code wrapped the fetch-guard logic in `useCallback`:
+
+```ts
+const skipEmailSuggestion = useCallback(() => {
+  if (!EMAIL_REGEX.test(debouncedAddress)) return true
+  return !debouncedAddress || debouncedAddress === suggestedReplacement
+}, [debouncedAddress, suggestedReplacement])
+```
+
+`useCallback` memoizes a function reference — useful when that reference is passed to a child component or listed as a `useEffect` dependency. Here it was only called *inside* a single `useEffect`. The memoized reference was never passed anywhere, so the wrapper added overhead without benefit.
+
+After inlining, the guard also lost a redundant check: `!debouncedAddress` is always true when `!EMAIL_REGEX.test(debouncedAddress)` is true (an empty string fails the regex), so it collapsed to one condition:
+
+```ts
+useEffect(() => {
+  if (!EMAIL_REGEX.test(debouncedAddress) || debouncedAddress === suggestedReplacement) {
+    setShowSuggestion(false)
+    return
+  }
+  // ...fetch...
+}, [debouncedAddress])
+```
+
+## async/await inside useEffect needs an inner function
+
+`useEffect` callbacks must return either nothing or a cleanup function — async functions return a `Promise`, which breaks that contract. The fix is a named inner async function called immediately:
+
+```ts
+useEffect(() => {
+  const fetchSuggestion = async () => {
+    try {
+      const response = await fetch(url, { headers })
+      const data = await response.json()
+      setSuggestedReplacement(data.suggested_replacement)
+      setShowSuggestion(!!data.suggested_replacement)
+    } catch {
+      setShowSuggestion(false)
+    }
+  }
+
+  fetchSuggestion()
+}, [debouncedAddress])
+```
+
+The named function also makes it straightforward to add a cleanup (an `AbortController`, for example) if cancellation ever becomes necessary.
+
+<AsyncEffectDemo client:load />
