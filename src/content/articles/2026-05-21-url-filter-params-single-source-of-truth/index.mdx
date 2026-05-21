@@ -1,0 +1,149 @@
+---
+title: "Server-resolved URL filters: one source of truth for a timeframe Select"
+date: 2026-05-21
+description: "Wiring a Select to ?timeframe= with an enum, a frozen lambda table, and a single normalization site on the server — so the client never has to know what “default” means."
+tags: ["rails", "react", "typescript", "urls"]
+---
+
+import TimeframeResolver from './TimeframeResolver.tsx';
+import HistoryStrategyDemo from './HistoryStrategyDemo.tsx';
+
+A payouts page got a “Time frame” dropdown. The shape that question takes in the URL — `?timeframe=this_month` vs `?start=2026-05-01&end=2026-05-31` — turns out to drive almost every other decision: timezone correctness, bookmark semantics, how many places need a fallback, whether the back button piles up junk, even how the Rubocop complexity check behaves.
+
+What follows are the five small decisions that made the wire-up calm instead of busy, plus the review feedback that nudged a couple of them into their final shape.
+
+## 1. An enum, not a date pair
+
+The first instinct is `?start_date=2026-05-01&end_date=2026-05-31`. It looks honest — the URL says exactly what the query is. Two problems show up immediately:
+
+- **Timezone drift.** This is an accounting product. “This month” should mean the org’s `Time.zone`, not the browser’s. Computing dates on the client and shipping them over the wire means a payout posted at 11:30 pm in the org’s timezone can fall on the wrong side of the boundary depending on whose laptop is open.
+- **Bookmark rot.** `?timeframe=this_month` always means “current month at view time.” A bookmarked `?start=2026-05-01&end=2026-05-31` becomes the wrong question next month.
+
+So the URL carries an *intent*, not a *materialized range*. The server resolves intent → range every request, in the right zone, at the right moment.
+
+```ruby
+class PayoutTimeframe
+  DEFAULT = "this_month".freeze
+
+  RANGES = {
+    "this_month" => -> { Date.current.all_month },
+    "last_month" => -> { Date.current.prev_month.all_month },
+    "last_7_days" => -> { 6.days.ago.to_date..Date.current },
+    "last_30_days" => -> { 29.days.ago.to_date..Date.current },
+    "last_3_months" => -> { (Date.current << 3)..Date.current },
+    "last_6_months" => -> { (Date.current << 6)..Date.current },
+    "this_year" => -> { Date.current.all_year },
+    "last_year" => -> { Date.current.prev_year.all_year },
+  }.freeze
+
+  def self.range_for(value)
+    key = RANGES.key?(value.to_s) ? value.to_s : DEFAULT
+    RANGES.fetch(key).call
+  end
+end
+```
+
+The thing to notice: every range is wrapped in a lambda. Without that wrapper, `Date.current.all_month` would be evaluated once when the class loads — at boot — and every request would query the month the server was booted in.
+
+## 2. A frozen lambda table is both validator and dispatcher
+
+The first cut of this used a `case`/`when` ladder. Rubocop wasn’t thrilled — method length, cyclomatic complexity, and ABC size all tripped. The natural move was to extract it into a private method or split it up. A reviewer suggested something cleaner: just turn the cases into a hash.
+
+The hash earns its keep three times:
+
+1. **Validation.** `RANGES.key?(value)` is the whitelist.
+2. **Dispatch.** `RANGES.fetch(key).call` is the lookup.
+3. **The list of supported timeframes** — `RANGES.keys` — is exported for the controller’s param sanitizer (see below).
+
+One constant, three jobs. The `case` statement only paid for one of those.
+
+The lazy-evaluation point bears repeating: `Date.current.all_month` inside a lambda is recomputed on every call. Inline as values, it would freeze at class load.
+
+## 3. `presence_in` is the one-liner whitelist
+
+The controller has to take an untrusted query param and turn it into a known-good value. The whole job, Rails-idiomatically:
+
+```ruby
+@timeframe =
+  params[:timeframe].presence_in(PayoutTimeframe::RANGES.keys) ||
+    PayoutTimeframe::DEFAULT
+```
+
+`presence_in` returns the value if it’s in the collection, otherwise `nil`. Combined with `|| DEFAULT`, that is: “use the param if it’s recognized; otherwise the default.” No `if`, no `Set.new`, no manual blank check. A bogus `?timeframe=bananas` quietly resolves to `"this_month"` instead of pushing garbage into the rest of the request.
+
+That single line is the *only* place this normalization happens.
+
+<TimeframeResolver client:load />
+
+## 4. Push the resolved value back into the view as a prop
+
+This is the decision that took the most back-and-forth in review, and it’s the most important one.
+
+The first version had the React component re-read the URL itself:
+
+```tsx
+// early version
+function currentTimeframe() {
+  return new URLSearchParams(window.location.search).get('timeframe') || DEFAULT_TIMEFRAME;
+}
+```
+
+That looks fine until the defaults are counted. There were four:
+
+- The controller’s `|| DEFAULT` when resolving the range.
+- The controller’s `|| DEFAULT` when assigning `@timeframe`.
+- The React component’s `|| DEFAULT_TIMEFRAME` when reading the URL.
+- The Select’s own behavior when given an unknown value.
+
+Four falls back to default, and the Copilot review caught a real consequence: if the URL says `?timeframe=bogus`, the server resolves to `this_month` (correct), but the React `currentTimeframe()` returns the raw `"bogus"` (wrong), and the Select renders with no matching option. The UI and the data are now disagreeing about what filter is in effect.
+
+The fix collapses all four into one. The server does the resolution; it threads the resolved value through to the component as a prop:
+
+```erb
+<%= turbo_mount "payments/payout_reports", props: { timeframe: @timeframe } %>
+```
+
+```tsx
+type PayoutReportsProps = { timeframe: string };
+
+export default function PayoutReports({ timeframe }: PayoutReportsProps) {
+  return (
+    <Select
+      label="Time frame"
+      options={TIMEFRAMES}
+      hideLabel
+      defaultValue={timeframe}
+      onChange={(e) => handleTimeframeChange(e.target.value)}
+    />
+  );
+}
+```
+
+`DEFAULT_TIMEFRAME` is gone from the front end. `currentTimeframe()` is gone. The component cannot disagree with the server because it doesn’t have its own opinion to disagree with.
+
+The reviewer’s phrasing on this was sharp: *“we’re being defensive in four places — if we set `@timeframe` first and pass it in, we just validate once and everything downstream is known-good.”* That’s exactly it. Multiple defaulting sites aren’t safety, they’re drift.
+
+## 5. `location.replace`, not `assign`, for filter selects
+
+When the Select changes, the URL needs to update and the page needs to re-render. The page is server-rendered + `turbo_mount`ed — there’s no JSON endpoint and no React Router — so the reload itself is the cheap path. The remaining question is *how* to navigate:
+
+```ts
+function handleTimeframeChange(value: string) {
+  const url = new URL(window.location.href);
+  url.searchParams.set('timeframe', value);
+  window.location.replace(url.toString());
+}
+```
+
+`replace` swaps the current history entry. `assign` (or just setting `location.href`) pushes a new one. For a filter, `replace` is the right choice: clicking through five timeframes shouldn’t put five entries in the back stack between “the page the user came from” and “where the user is now.” The back button should return to the previous *page*, not to a previous *filter value on the same page*.
+
+<HistoryStrategyDemo client:load />
+
+## What the review process surfaced
+
+A few small things worth carrying forward:
+
+- **Multiple defaulting sites are a smell, not a safety net.** When two places both fall back to `DEFAULT`, they will eventually fall back to *different* defaults.
+- **A frozen hash of lambdas is a perfectly nice replacement for a small `case`/`when`** when the cases are uniformly shaped. It also gives the rest of the code something to iterate over.
+- **Server-rendered pages can still pass props.** Threading `@timeframe` through the partial as `turbo_mount` props eliminated a whole class of URL-vs-state drift. It was, per the reviewer’s comment in the diff, the project’s first prop. Worth a 🎉.
+- **Inline the simple stuff.** A short-lived `PayoutTimeframe.normalize` method got extracted and then inlined back into the controller during review — “simple logic, nice to see why the param value isn’t being used.” Two lines in the controller beat a method named `normalize` that does whitelist-or-default.
