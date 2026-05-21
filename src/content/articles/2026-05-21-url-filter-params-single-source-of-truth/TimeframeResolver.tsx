@@ -1,4 +1,13 @@
 import { useMemo, useState } from 'react';
+import {
+  Demo,
+  Toolbar,
+  ToggleGroup,
+  Input,
+  Output,
+  OutputRow,
+  Hint,
+} from '../../../components/demo';
 
 const TIMEFRAMES = [
   'this_month',
@@ -74,35 +83,21 @@ export default function TimeframeResolver() {
   const [start, end] = useMemo(() => RANGES[resolved](), [resolved]);
 
   return (
-    <div className="demo">
-      <div className="demo-label">Interactive · React</div>
+    <Demo>
       <p style={{ marginTop: 0, fontSize: '0.9rem', color: 'var(--ink-soft)' }}>
         Type a raw <code>?timeframe=</code> value or pick a preset. The resolver applies the same
         whitelist-or-default that the controller does:{' '}
         <code>params[:timeframe].presence_in(RANGES.keys) || DEFAULT</code>.
       </p>
 
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', marginBottom: '0.75rem' }}>
-        {PRESETS.map((p) => (
-          <button
-            key={p || '(blank)'}
-            onClick={() => setRaw(p)}
-            style={
-              p === raw
-                ? { fontFamily: 'var(--mono)', fontSize: '0.8rem' }
-                : {
-                    background: 'transparent',
-                    color: 'var(--ink-soft)',
-                    border: '1px solid var(--rule)',
-                    fontFamily: 'var(--mono)',
-                    fontSize: '0.8rem',
-                  }
-            }
-          >
-            {p === '' ? '(blank)' : p}
-          </button>
-        ))}
-      </div>
+      <Toolbar>
+        <ToggleGroup
+          variant="pill"
+          value={raw}
+          onChange={setRaw}
+          options={PRESETS.map((p) => ({ value: p, label: p === '' ? '(blank)' : p }))}
+        />
+      </Toolbar>
 
       <label
         style={{
@@ -115,62 +110,36 @@ export default function TimeframeResolver() {
       >
         raw param value
       </label>
-      <input
+      <Input
         type="text"
         value={raw}
         onChange={(e) => setRaw(e.target.value)}
         placeholder="?timeframe="
-        style={{
-          fontFamily: 'var(--mono)',
-          fontSize: '0.9rem',
-          padding: '0.4rem 0.6rem',
-          border: '1px solid var(--rule)',
-          borderRadius: '4px',
-          background: 'transparent',
-          color: 'inherit',
-          width: '100%',
-          boxSizing: 'border-box',
-          marginBottom: '0.75rem',
-        }}
+        style={{ marginBottom: '0.75rem' }}
       />
 
-      <div
-        style={{
-          padding: '0.75rem',
-          border: '1px solid var(--rule)',
-          borderRadius: '4px',
-          fontFamily: 'var(--mono)',
-          fontSize: '0.85rem',
-          display: 'grid',
-          gridTemplateColumns: 'max-content 1fr',
-          columnGap: '0.75rem',
-          rowGap: '0.35rem',
-        }}
-      >
-        <span style={{ color: 'var(--ink-soft)' }}>raw:</span>
-        <span>{raw === '' ? <em style={{ color: 'var(--ink-soft)' }}>(empty)</em> : raw}</span>
-
-        <span style={{ color: 'var(--ink-soft)' }}>resolved:</span>
-        <span>
+      <Output grid>
+        <OutputRow label="raw:">
+          {raw === '' ? <em style={{ color: 'var(--ink-soft)' }}>(empty)</em> : raw}
+        </OutputRow>
+        <OutputRow label="resolved:">
           {resolved}
           {fellBack && (
-            <span style={{ marginLeft: '0.5rem', color: 'hsl(42 80% 50%)' }}>
+            <span data-tone="warn" style={{ marginLeft: '0.5rem' }}>
               ← unknown, fell back to DEFAULT
             </span>
           )}
-        </span>
-
-        <span style={{ color: 'var(--ink-soft)' }}>range:</span>
-        <span>
+        </OutputRow>
+        <OutputRow label="range:">
           {fmt(start)} … {fmt(end)}
-        </span>
-      </div>
+        </OutputRow>
+      </Output>
 
-      <p style={{ marginTop: '0.75rem', fontSize: '0.85rem', color: 'var(--ink-soft)' }}>
+      <Hint>
         “Today” is pinned to 2026-05-21 for this demo. Notice that the unknown value{' '}
         <code>bananas</code> doesn’t throw, doesn’t render a broken Select — it just resolves to{' '}
         <code>this_month</code>, same as the empty string would.
-      </p>
-    </div>
+      </Hint>
+    </Demo>
   );
 }

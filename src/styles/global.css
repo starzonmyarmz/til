@@ -16,6 +16,9 @@
     sans-serif;
   --serif:
     "Iowan Old Style", "Palatino Linotype", "Palatino", ui-serif, Georgia, serif;
+  --tone-good: hsl(140 50% 35%);
+  --tone-warn: hsl(35 75% 40%);
+  --tone-bad: #b94a48;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -30,6 +33,9 @@
     --rule: #2c2820;
     --code-bg: #0c0b08;
     --code-ink: #eae6dc;
+    --tone-good: hsl(140 50% 60%);
+    --tone-warn: hsl(42 80% 60%);
+    --tone-bad: #e88a86;
   }
 }
 
@@ -428,10 +434,127 @@ a:hover {
   font-size: 0.9rem;
 }
 .demo .fieldpreview .errorText {
-  color: #c0392b;
+  color: var(--tone-bad);
   font-size: 0.85rem;
   margin-top: 0.4rem;
 }
+
+/* Pill button — outlined chip used for option groups (timeframes, scenarios, samples) */
+.demo .pill {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  background: transparent;
+  color: var(--ink-soft);
+  border: 1px solid var(--rule);
+  padding: 0.3rem 0.65rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+.demo .pill:hover:not(:disabled) {
+  color: var(--ink);
+  border-color: var(--ink-soft);
+  background: transparent;
+}
+.demo .pill.active {
+  color: var(--ink);
+  border-color: var(--ink);
+  background: transparent;
+  font-weight: 600;
+}
+.demo .pill:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Toolbar — flex row of controls above the demo body */
+.demo .toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+.demo .toolbar .spacer {
+  margin-left: auto;
+}
+
+/* Field — labeled row (label on the left, control on the right) */
+.demo .field {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0.4rem 0;
+}
+.demo .field > .field-label {
+  min-width: 8rem;
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 0.85rem;
+}
+
+/* Mono text input — full-width by default */
+.demo .input-mono {
+  font-family: var(--mono);
+  font-size: 0.9rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  width: 100%;
+  box-sizing: border-box;
+}
+.demo .input-mono:focus {
+  outline: none;
+  border-color: var(--ink-soft);
+}
+
+/* Output panel — bordered mono block for showing computed values */
+.demo .output {
+  font-family: var(--mono);
+  font-size: 0.88rem;
+  padding: 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: transparent;
+}
+.demo .output .label {
+  color: var(--ink-soft);
+  margin-right: 0.5rem;
+}
+.demo .output.grid {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: 0.75rem;
+  row-gap: 0.35rem;
+}
+
+/* Console — log-style output with tone-colored lines */
+.demo .console {
+  font-family: var(--mono);
+  font-size: 0.88rem;
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: transparent;
+  white-space: pre-wrap;
+  min-height: 5rem;
+}
+.demo .console .line {
+  display: block;
+}
+.demo .console .placeholder {
+  color: var(--ink-faint);
+  font-style: italic;
+}
+
+/* Tone helpers — semantic colors usable on text/borders inside demos */
+.demo [data-tone="info"] { color: var(--ink-soft); }
+.demo [data-tone="good"] { color: var(--tone-good); }
+.demo [data-tone="warn"] { color: var(--tone-warn); }
+.demo [data-tone="bad"]  { color: var(--tone-bad);  }
 
 @media (max-width: 640px) {
   html,

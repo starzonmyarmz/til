@@ -1,8 +1,13 @@
 import { useState } from 'react';
+import {
+  Demo,
+  Toolbar,
+  Button,
+  Console,
+  type ConsoleLine,
+} from '../../../components/demo';
 
 type Scenario = 'ok' | 'http_500' | 'network';
-
-type LogEntry = { line: string; tone: 'info' | 'good' | 'bad' };
 
 function fakeFetch(scenario: Scenario): Promise<Response> {
   return new Promise((resolve, reject) => {
@@ -22,12 +27,12 @@ function fakeFetch(scenario: Scenario): Promise<Response> {
 
 export default function ErrorPathsDemo() {
   const [scenario, setScenario] = useState<Scenario>('ok');
-  const [log, setLog] = useState<LogEntry[]>([]);
+  const [log, setLog] = useState<ConsoleLine[]>([]);
   const [running, setRunning] = useState(false);
 
   const run = async () => {
     setRunning(true);
-    const trace: LogEntry[] = [];
+    const trace: ConsoleLine[] = [];
     try {
       trace.push({ line: 'await fetch(...)', tone: 'info' });
       const response = await fakeFetch(scenario);
@@ -48,13 +53,9 @@ export default function ErrorPathsDemo() {
     setRunning(false);
   };
 
-  const toneColor = (t: LogEntry['tone']) =>
-    t === 'good' ? 'var(--ink)' : t === 'bad' ? '#b94a48' : 'var(--ink-soft)';
-
   return (
-    <div className="demo">
-      <div className="demo-label">Interactive · React</div>
-      <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+    <Demo>
+      <Toolbar>
         <label style={{ fontFamily: 'var(--mono)', fontSize: '0.9rem' }}>
           scenario:{' '}
           <select value={scenario} onChange={(e) => setScenario(e.target.value as Scenario)}>
@@ -63,31 +64,11 @@ export default function ErrorPathsDemo() {
             <option value="network">network failure</option>
           </select>
         </label>
-        <button onClick={run} disabled={running}>
+        <Button onClick={run} disabled={running}>
           {running ? 'running…' : 'run'}
-        </button>
-      </div>
-      <pre
-        style={{
-          fontFamily: 'var(--mono)',
-          fontSize: '0.9rem',
-          background: 'transparent',
-          margin: 0,
-          padding: '0.5rem 0.75rem',
-          border: '1px solid var(--rule)',
-          minHeight: '6rem',
-        }}
-      >
-        {log.length === 0 ? (
-          <span style={{ color: 'var(--ink-soft)' }}>// pick a scenario and click run</span>
-        ) : (
-          log.map((entry, i) => (
-            <div key={i} style={{ color: toneColor(entry.tone) }}>
-              {entry.line}
-            </div>
-          ))
-        )}
-      </pre>
-    </div>
+        </Button>
+      </Toolbar>
+      <Console lines={log} placeholder="// pick a scenario and click run" />
+    </Demo>
   );
 }
