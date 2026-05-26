@@ -1,89 +1,19 @@
 ---
-title: "Replacing JSX placeholders with typed server props"
+title: "Three Intl habits for money and dates in React"
 date: 2026-05-26
-description: "Five small habits that make the Rails-to-React seam boring: a single prop bag, integer cents on the wire, hoisted Intl formatters, ISO date strings, and a whitelist for branded assets."
-tags: ["rails", "react", "typescript", "i18n"]
+description: "Integer minor units on the wire, a hoisted Intl.NumberFormat, and ISO date strings parsed once — the small choices that keep currency and date rendering boring."
+tags: ["react", "typescript", "i18n"]
 ---
 
 import CurrencyDemo from './CurrencyDemo.tsx';
 import FormatterScopeDemo from './FormatterScopeDemo.tsx';
 import DateDemo from './DateDemo.tsx';
-import BrandGuardDemo from './BrandGuardDemo.tsx';
 
-A payouts report shipped behind a feature flag with all the values hardcoded into JSX — `$213,596.57`, `Rayna Franci`, `3/5/2026`. It looked right in screenshots. It also lied: every account saw the same numbers. The next step was the boring one — replace every placeholder with a value from the server — and that is exactly where the seam between Rails and React earns its rent.
+A payouts report shipped with every value hardcoded into JSX — `$213,596.57`, `3/5/2026`, the works. Replacing those placeholders with values pulled from a JSON payload is supposed to be the boring step. It only stays boring if the rendering side commits to a few habits about how money and dates cross the wire.
 
-What follows are five small habits that made the wire-up dull instead of clever. None of them are individually exciting; together they are the difference between a React island that fights you and one that quietly does its job.
+What follows are three of them. None of them is individually exciting. Together they are the difference between a table that renders correctly in every locale and one that ships a subtle bug to whichever customer happens to live in the wrong timezone.
 
-## 1. One prop bag, one mount point
-
-The Rails view does not assemble HTML for the report. It mounts a React component and hands it a single hash of props.
-
-```erb
-<%= turbo_mount(
-      "PayoutReports",
-      props: payout_report_props(payout:, balance_transactions:).merge(timeframe:),
-      class: "d-c"
-    ) %>
-```
-
-`turbo_mount` is the project’s thin helper around “render an element, attach a `data-react-class` attribute, and let a small bootstrap script hydrate it on the client.” The interesting part is not the helper — it is the shape of `payout_report_props`. That helper is the entire contract between the two stacks. Add a key in Ruby, type the key in TypeScript, render the key in JSX. Nothing else changes.
-
-```ruby
-def balance_transaction_props(balance_transactions = [])
-  balance_transactions&.map do |bt|
-    {
-      id: bt.id,
-      app_name: bt.app&.name&.downcase,
-      person_name: bt.person&.name,
-      campus_id: bt.campus_id,
-      campus_name: bt.campus&.name,
-      transaction_date: bt.transaction_date&.iso8601,
-      type: bt.type,
-      amount: bt.amount,
-      fee: bt.fee,
-      net: bt.net,
-      designation_ids: bt.designation_ids,
-    }
-  end
-end
-```
-
-The Ruby side reaches into ActiveRecord associations with safe navigation — `bt.app&.name` — and returns plain JSON-ready values. No partial rendering, no decorator, no view model. The TypeScript side mirrors the same shape with a type alias:
-
-```ts
-type BalanceTransaction = {
-  id: number
-  app_name: string | null
-  person_name: string | null
-  campus_id: number | null
-  campus_name: string | null
-  transaction_date: string | null
-  type: string | null
-  amount: number
-  fee: number
-  net: number
-  designation_ids: number[]
-}
-```
-
-The thing to notice: every association-derived field is `string | null` or `number | null` because every Ruby `&.` could have returned `nil`. The two sides agree on nullability in the same way they agree on field names. Drift between them shows up as a TypeScript error before it shows up as a console exception in the browser.
-
-A small extra: a staff-only `<details>` block at the bottom of the page dumps both the resolved props and the raw `as_json` payload. That single fixture — visible only to staff in production — turns “does the server actually send what the client expects” into a five-second answer instead of a ten-minute debugging session.
-
-```erb
-<% if Person.current.staff_or_impersonating? %>
-  <div class="pane pane--staff-only">
-    <details>
-      <summary>Component Props</summary>
-      <pre><%= JSON.pretty_generate(payout_report_props(...)) %></pre>
-    </details>
-  </div>
-<% end %>
-```
-
-It is the single highest-leverage twenty lines of code on the page.
-
-## 2. Integer cents on the wire, currency on the surface
+## 1. Integer minor units on the wire, currency on the surface
 
 The payout amount is an integer. It is always an integer — `21359657` minor units, never `213596.57` dollars. Sending a float across the wire opens the door to every binary-floating-point story that finance teams already know by heart, and shipping a pre-formatted string would hand the locale decision to the server in a place where it does not belong.
 
@@ -113,11 +43,15 @@ A subtle bug avoided: the fee row negates the value before formatting, not after
 {currencyFormatter.format(-payout_fee / 100)}
 ```
 
-`-payout_fee / 100` is a number; `-${formatter.format(payout_fee / 100)}` is a string with a leading hyphen-minus that the locale’s own negative convention may or may not match. Letting `Intl` see a negative number lets it produce the right thing for, say, accounting parentheses in some locales.
+`-payout_fee / 100` is a number; `'-' + formatter.format(payout_fee / 100)` is a string with a leading hyphen-minus that the locale’s own negative convention may or may not match. Letting `Intl` see a negative number lets it produce the right thing — accounting parentheses, locale-specific minus glyphs, the works — instead of a hand-rolled approximation.
 
-## 3. Hoist the formatter
+The principle is the same one that motivates parameterized SQL. Hand the formatter structured data, not a half-assembled string. The library exists to make that conversion correct.
 
-`Intl.NumberFormat` is more expensive to construct than most React code assumes. The fix is one line:
+## 2. Hoist the formatter
+
+`Intl.NumberFormat` is more expensive to construct than most React code assumes. Every `new Intl.NumberFormat(locale, options)` call walks the locale data, resolves the options, and allocates an internal pattern. None of that work needs to happen more than once for a fixed `(locale, options)` pair, and on a table with hundreds of rows it adds up fast.
+
+The fix is one line:
 
 ```tsx
 const currencyFormatter = new Intl.NumberFormat('en-US', {
@@ -128,15 +62,27 @@ const currencyFormatter = new Intl.NumberFormat('en-US', {
 export default function PayoutReports({ ... }) { ... }
 ```
 
-Module scope, top of file, built exactly once for the lifetime of the page. Every row of the transaction table reuses the same instance. The same applies to `Intl.DateTimeFormat`.
+Module scope, top of file, built exactly once for the lifetime of the page. Every row of the transaction table reuses the same instance. The same applies to `Intl.DateTimeFormat`, `Intl.Collator`, `Intl.PluralRules` — any of the `Intl.*` constructors.
 
 <FormatterScopeDemo client:load />
 
 The numbers vary by machine and browser, but the ratio rarely surprises anyone — re-constructing the formatter inside the loop costs an order of magnitude or two more than reusing the hoisted instance. A two-hundred-row payouts table calling `new Intl.NumberFormat()` for every cell would have spent more time configuring formatters than rendering DOM. None of that effort is visible in a code review — which is exactly why the habit needs to be the default.
 
-A related habit: do not put `useMemo(() => new Intl.NumberFormat(...))` inside the component. The component is the wrong scope. Currency formatters are pure functions of `(locale, options)`; they do not depend on props. Putting them in module scope says that out loud.
+A related habit worth naming: do not put `useMemo(() => new Intl.NumberFormat(...))` inside the component. The component is the wrong scope. Currency formatters are pure functions of `(locale, options)`; they do not depend on props or state. Putting them in module scope says that out loud and removes the need for a memo dependency array that nobody will ever update correctly.
 
-## 4. ISO strings in, locale-aware dates out
+If the locale really does change at runtime — a user toggling regions, an admin previewing another tenant — the right move is still a small map of pre-built formatters keyed by locale, not on-demand construction inside the render path.
+
+```tsx
+const FORMATTERS: Record<string, Intl.NumberFormat> = {
+  'en-US': new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }),
+  'en-GB': new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }),
+  'de-DE': new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }),
+}
+```
+
+That table is still allocated once per module load, and the lookup is `O(1)`. The render path stays a single property access.
+
+## 3. ISO strings in, locale-aware dates out
 
 Dates have the same shape of bug as money. The server has a `Date` (or `Time`) object. The wire format is a string. The client parses the string and the renderer chooses how to show it.
 
@@ -155,45 +101,21 @@ const dateFormatter = new Intl.DateTimeFormat('en-US')
   : ''}
 ```
 
-`new Date(string)` is one of the rare places where `Date` parsing is actually well-defined: ISO 8601 with an offset is required by the spec. Locale-formatted strings, ambiguous two-digit years, and the bare-date form `"2026-03-05"` (which is parsed as UTC midnight, then displayed in local time, which has tripped every team that ever wrote a calendar) are the failure modes the ISO format dodges.
+`new Date(string)` is one of the rare places where `Date` parsing is actually well-defined: ISO 8601 with an offset is required by the spec. Locale-formatted strings, ambiguous two-digit years, and the bare-date form `"2026-03-05"` — which is parsed as UTC midnight, then displayed in local time, which has tripped every team that ever wrote a calendar — are the failure modes the ISO format dodges.
 
 <DateDemo client:load />
 
 The same instant rendered into four locales. Notice that the parsed value never changes — it is a fixed point in time. Only the formatter output changes. That is the whole separation: time is a number, display is a render concern, and the wire format is the contract between them.
 
-The nullable case (`transaction.transaction_date ? ... : ''`) is worth a line of its own. Skipping the check throws `Invalid Date` into the DOM the first time a row arrives without a date, which on a payout report is a state every QA tester will eventually find.
+A few small things worth being deliberate about:
 
-## 5. A whitelist for branded assets
-
-The transaction row renders a small product logo next to each entry — Giving, Registrations, etc. The Rails side downcases the app name so the client has a stable string to compare against:
-
-```ruby
-app_name: bt.app&.name&.downcase,
-```
-
-The React side does not blindly hand that string to a logo component. It checks against a known set first.
-
-```tsx
-{(transaction.app_name === 'giving' ||
-  transaction.app_name === 'registrations') && (
-  <Logo name={transaction.app_name} theme="color" markOnly />
-)}
-```
-
-That guard is doing real work in three ways.
-
-First, **the client only ships a finite set of brand assets**. Forwarding an arbitrary `name` to `<Logo>` would either render a broken image or fall back to a placeholder, and neither failure mode shows up in a server log. The whitelist makes the absent case explicit.
-
-Second, **the server is allowed to add new product names without breaking the page**. Tomorrow `bt.app.name` could be `"groups"` and the row still renders — just without a mark. The contract is forward-compatible by default.
-
-Third, **TypeScript can narrow the type inside the guard**. With a small predicate helper, `transaction.app_name` becomes `"giving" | "registrations"` inside the conditional, and `<Logo name={...}>` typechecks against the component’s real prop union instead of `string`. The article’s demo shows the same pattern slightly more formally.
-
-<BrandGuardDemo client:load />
-
-The same pattern repeats anywhere the server can hand back a string that the client must convert to a static asset, a route, or a switch arm — payment method icons, country flags, status badges, integration logos. The shape is always: the server normalizes the string, the client whitelists the values it actually supports, and the type system makes the whitelist the source of truth.
+- **Always include the offset.** `2026-03-05T23:30:00-05:00` is unambiguous. `2026-03-05T23:30:00` is not — different browsers have historically disagreed about whether the absence of an offset means UTC or local time. The spec eventually settled on local, but code written under either reading still exists in the wild.
+- **Check the parse before formatting.** `new Date("not a date")` returns an `Invalid Date` whose `.getTime()` is `NaN`, and `Intl.DateTimeFormat` will happily render the string `"Invalid Date"` straight into the DOM. A `Number.isNaN(date.getTime())` guard catches it.
+- **Render the nullable case explicitly.** `transaction.transaction_date ? ... : ''` looks like noise until the first row arrives without a date and the table throws `Invalid Date` at every QA tester. The null branch is part of the contract, not an edge case.
+- **Reach for `dateStyle` and `timeStyle` before `format`-with-options.** `{ dateStyle: 'medium' }` is more locale-correct than hand-picking `year`, `month`, and `day` — it lets the locale data decide whether a comma belongs between the month and the day, whether the year leads or trails, and so on. The hand-picked option set is only worth reaching for when a specific column header constraint demands it.
 
 ## What this adds up to
 
-None of these are clever individually. The interesting thing is that they reinforce each other. A typed prop bag with nullable fields makes the staff-only JSON dump a useful debugging tool. Integer cents make the hoisted `Intl.NumberFormat` a hot loop instead of a one-shot. ISO date strings make the same module-scope hoist work for dates. The whitelist for branded assets makes the typed prop bag actually constrain rendering instead of just describing it.
+The three habits reinforce each other. Integer minor units are only worth keeping integer if the formatter can produce the right currency string at the edge — that is what `Intl.NumberFormat` does. The formatter is only cheap to use everywhere if it is hoisted out of the render path — that is what module scope does. And neither habit matters if the date column is silently rendering UTC midnight as the day before because someone shipped a bare date string — that is what ISO offsets and a `Number.isNaN` check fix.
 
-The whole point of the React island pattern is that the seam between server-rendered HTML and a client component is supposed to be cheap to cross. It is cheap, but only when the contract on both sides agrees about what a value is — its type, its unit, its nullability, and whether the client is allowed to recognize it. Spend the boring effort once and the second page like this one falls out of the keyboard in an afternoon.
+The whole point of `Intl` is to compress a pile of locale knowledge into a few well-named primitives. The cost of that compression is that the primitives are not free, and the wire format has to meet them halfway. Spend the boring effort once and the second table like this one falls out of the keyboard in an afternoon.
