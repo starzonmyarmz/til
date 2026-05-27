@@ -1,0 +1,131 @@
+---
+title: "Wrapping the native dialog element in React"
+date: 2026-05-27
+description: "The browser ships a real modal element with a free focus trap, backdrop, and Esc dismissal. Bridging it into a React component is mostly about syncing one boolean to two imperative methods — and remembering that jsdom skipped the whole party."
+tags: ["react", "typescript", "html", "testing"]
+---
+
+import DialogDemo from './DialogDemo.tsx';
+import OpenVsShowModalDemo from './OpenVsShowModalDemo.tsx';
+import BackdropClickDemo from './BackdropClickDemo.tsx';
+
+A new Export button on a payouts page needed a modal. The first instinct, hardened by years of React habit, was to reach for a portal, a fixed-position overlay, some flavor of focus-trap library, and a key handler for Esc. The platform has quietly shipped all of that. The `<dialog>` element is in every evergreen browser, has been for years, and the gap between it and a hand-rolled modal is now mostly accidental complexity that nobody removed.
+
+Building a thin React wrapper around it turned out to be three small problems. Sync a boolean to an imperative API. Decide what counts as a close. Convince the test environment that the API exists at all. None of these is hard; together they are the entire surface of a production-grade modal.
+
+## The platform already does the heavy lifting
+
+A naked `<dialog>` renders nothing until it opens. Once opened, it sits in the browser's top layer — above every other element regardless of stacking context — focus moves into it, the rest of the page becomes inert, and the Esc key fires a cancel event for free. None of that needs a library.
+
+```html
+<dialog id="d">
+  <p>Hello</p>
+  <button>OK</button>
+</dialog>
+<script>
+  document.getElementById('d').showModal()
+</script>
+```
+
+What to notice: `showModal()` is the verb that does all the modal work — focus trap, inertness, top layer. The sibling method `show()` does the much weaker thing, opening the dialog non-modally without any of those guarantees. Almost every modal use case wants `showModal`.
+
+There is a third option, the boolean `open` attribute. Setting `<dialog open>` in markup will display the dialog, but it skips the modal behavior entirely. It is the equivalent of `show()` in declarative form. Mixing the attribute with React's render cycle is also where the wrapper gets weird, because the attribute and the imperative methods are two different ways of opening the same element, and they do not produce the same result.
+
+<OpenVsShowModalDemo client:load />
+
+The difference shows up immediately. The `open`-attribute dialog has no backdrop, no focus trap, no Esc handler. The `showModal` dialog has all three.
+
+## React boolean, imperative element
+
+React likes declarative props; the dialog element exposes imperative methods. The bridge is a `useEffect` that watches an `isOpen` prop and calls the right method on the underlying element.
+
+```tsx
+const ref = useRef<HTMLDialogElement>(null)
+
+useEffect(() => {
+  const dialog = ref.current
+  if (!dialog) return
+
+  if (isOpen && !dialog.open) dialog.showModal()
+  else if (!isOpen && dialog.open) dialog.close()
+}, [isOpen])
+```
+
+What to notice: the guards check the element's current state before calling either method. Calling `showModal()` on a dialog that is already open throws an `InvalidStateError`; calling `close()` on a dialog that is already closed is a no-op but pollutes the event log with a `close` event that the parent component then has to ignore. Reading `dialog.open` once and gating both branches sidesteps both problems.
+
+The render itself is plain JSX. No `open` attribute is written from React — the imperative call is the only thing that toggles visibility.
+
+```tsx
+<dialog ref={ref} onCancel={handleCancel} onClick={handleBackdropClick}>
+  {children}
+</dialog>
+```
+
+## Three ways to close, one onClose prop
+
+A modal closes for at least three reasons: a button inside it, the Esc key, and a click on the backdrop. Each one needs to route through the same `onClose` callback so the parent component can keep its state in sync with the DOM.
+
+The button case is the easy one — pass `onClose` to the close button's `onClick`. The other two need a little plumbing.
+
+The Esc key fires a `cancel` event on the dialog before it auto-closes. Letting the auto-close run would leave React's state out of sync: the DOM thinks the dialog is closed, React still thinks `isOpen` is true, and the next render would call `showModal()` and reopen the dialog. The fix is to preventDefault on the cancel event and let the parent's state change drive the close instead.
+
+```tsx
+const handleCancel = (e: React.SyntheticEvent<HTMLDialogElement>) => {
+  e.preventDefault()
+  onClose()
+}
+```
+
+What to notice: the React synthetic event covers the native `cancel` event. JSX exposes it as `onCancel`. Without `preventDefault`, the dialog closes itself, React rerenders thinking it should still be open, the effect runs `showModal` again, and the modal pops back up — a near-impossible bug to reproduce by accident because it depends on a parent that ignores the close event.
+
+The backdrop is the more interesting one. The backdrop is not a separate element. It is a pseudo-element drawn by the browser when the dialog is in its top-layer modal state, and clicks on the visible backdrop are dispatched to the `<dialog>` itself rather than to any child. That makes the detection trick small and ugly: if the click's target is the dialog element, the click was on the backdrop; if the target is anything else, the click was inside the dialog's content.
+
+```tsx
+const handleBackdropClick = (e: React.MouseEvent<HTMLDialogElement>) => {
+  if (e.target === ref.current) onClose()
+}
+```
+
+<BackdropClickDemo client:load />
+
+What to notice: the children inside the dialog stop the event from being attributed to the dialog itself, because event targets are always the deepest element. Clicking on text, a button, an input — anything — sets the target to that node. Only a click on the actual backdrop strip leaves the dialog as the target.
+
+A subtle consequence: if the dialog has no padding or its content fills the entire dialog box, there is no backdrop to click. That is usually fine. The Esc key still works.
+
+## Putting the pieces together
+
+All three close paths route through the same `onClose`. The parent owns the boolean. The dialog owns nothing.
+
+<DialogDemo client:load />
+
+The wrapper component is short enough to fit in a single file. Header, body, and actions are separate components mostly for class-name hygiene — `dialog__header`, `dialog__body`, `dialog__actions` map cleanly to BEM-style CSS and keep the wrapper from caring about layout.
+
+## The jsdom polyfill
+
+There is a final, unavoidable problem: jsdom does not implement the dialog API. Tests written against this component will fail the moment they exercise the open path, because `HTMLDialogElement.prototype.showModal` does not exist in the test environment. The fix is a small polyfill in a `beforeAll`:
+
+```ts
+beforeAll(() => {
+  if (!HTMLDialogElement.prototype.showModal) {
+    HTMLDialogElement.prototype.showModal = function () {
+      this.setAttribute('open', '')
+    }
+  }
+  if (!HTMLDialogElement.prototype.close) {
+    HTMLDialogElement.prototype.close = function () {
+      this.removeAttribute('open')
+      this.dispatchEvent(new Event('close'))
+    }
+  }
+})
+```
+
+What to notice: `showModal` is faked by setting the `open` attribute, which is enough for `dialog.open` to read `true` so the wrapper's guard logic works in tests. The `close` polyfill removes the attribute and dispatches the `close` event the wrapper listens for. Neither polyfill simulates the focus trap or the backdrop — those are not testable in jsdom anyway. The point is to make the component's own state machine exercisable, not to reimplement the platform.
+
+This is the kind of setup that goes in a shared test helper the moment a second test file needs it. Until then, copying the five-line block is fine.
+
+## What this replaced
+
+The thing the wrapper replaced, in spirit, is the React modal of five years ago: a portal mounted to `document.body`, a fixed-position overlay div with its own backdrop, a focus-trap library managing tabindex shuffling, a global key handler watching for Escape, and a stack of state to know whether the modal was open. All of that is gone. The browser does it.
+
+What survived is the React-flavored piece — the boolean prop, the close callback, the JSX subcomponents. That piece is small because the platform is doing the work it used to delegate. The lesson sneaking up underneath is the larger one: a `dialog` element is one example, but `<details>`, `popover`, the file picker, the date picker, color inputs — the platform has spent the last several years quietly absorbing the things that React component libraries used to ship as their flagship features. Reaching for those first turns a 200-line component into a 30-line one.
