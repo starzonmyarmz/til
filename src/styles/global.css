@@ -487,7 +487,8 @@ a:hover {
   margin: 0.4rem 0;
 }
 .demo .field > .field-label {
-  min-width: 8rem;
+  flex: 0 0 auto;
+  white-space: nowrap;
   color: var(--ink-soft);
   font-family: var(--mono);
   font-size: 0.85rem;
@@ -528,6 +529,15 @@ a:hover {
   grid-template-columns: max-content 1fr;
   column-gap: 0.75rem;
   row-gap: 0.35rem;
+  align-items: baseline;
+}
+.demo .output.grid .label {
+  margin-right: 0;
+  white-space: nowrap;
+}
+.demo .output.grid .value {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /* Console — log-style output with tone-colored lines */
@@ -555,6 +565,79 @@ a:hover {
 .demo [data-tone="good"] { color: var(--tone-good); }
 .demo [data-tone="warn"] { color: var(--tone-warn); }
 .demo [data-tone="bad"]  { color: var(--tone-bad);  }
+
+/* Slider — labelled range with mono value readout */
+.demo .slider {
+  display: grid;
+  grid-template-columns: 5rem 1fr max-content;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0.3rem 0;
+}
+.demo .slider-label {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+.demo .slider input[type="range"] {
+  width: 100%;
+  margin: 0;
+}
+.demo .slider-value {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  text-align: right;
+  color: var(--ink);
+}
+
+/* History-stack list (used in URL filter demo) */
+.demo .history-stack {
+  list-style: decimal;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  margin: 0;
+  padding-left: 1.5rem;
+  color: var(--ink-soft);
+}
+.demo .history-stack li {
+  padding: 0.1rem 0;
+}
+.demo .history-stack li.current {
+  color: var(--ink);
+  font-weight: 600;
+}
+.demo .history-stack .here {
+  margin-left: 0.5rem;
+  color: var(--tone-good);
+  font-weight: 400;
+}
+.demo .currently-viewing {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  margin-top: 0.6rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--rule);
+}
+.demo .currently-viewing code {
+  background: transparent;
+  color: var(--ink);
+  padding: 0;
+}
+
+/* Badge — small mono pill, optionally toned */
+.demo .badge {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  background: transparent;
+  line-height: 1.4;
+  vertical-align: baseline;
+}
 
 @media (max-width: 640px) {
   html,

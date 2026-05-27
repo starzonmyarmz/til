@@ -9,3 +9,5 @@ export { default as Console } from './Console';
 export type { ConsoleLine, Tone } from './Console';
 export { default as Hint } from './Hint';
 export { default as Row } from './Row';
+export { default as Slider } from './Slider';
+export { default as Badge } from './Badge';
