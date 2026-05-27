@@ -1,0 +1,166 @@
+---
+title: "Prototyping a three.js game with canvas textures and WebAudio"
+date: 2026-05-27
+description: "A single-file three.js prototype with no asset pipeline. Sprites are drawn into a canvas at runtime, sound effects are synthesized in WebAudio, and NPC behaviour is a stack of timers."
+tags: ["threejs", "canvas", "webaudio", "game"]
+---
+
+import FlowerSpriteDemo from './FlowerSpriteDemo.tsx';
+import GardenAudioDemo from './GardenAudioDemo.tsx';
+import DogStateMachineDemo from './DogStateMachineDemo.tsx';
+
+A whiteboard sketch of an office floor plan turned into a three.js walkthrough in one HTML file. The first version was Wolfenstein-flavoured — brick walls, torchlight, a pistol. Three rounds of feedback later it had become a pastel garden where the player launches bees from a magic wand at flowers scattered across the map, and dogs wander in to pee on the flowers and undo the pollination. Same scene graph, same collision code, completely different mood.
+
+The interesting thing about the pivot was how little had to change. Every visual in the scene — walls, floor, sprites, sky — was procedural. There were no image files, no GLTF models, no sound files. Everything was a `<canvas>` drawn at startup and a few `OscillatorNode` chains synthesised on demand. That decision is what made the rewrite cheap. It also makes the prototype small enough to inspect every concept end-to-end.
+
+Three patterns carried most of the weight: canvas textures wrapped as three.js materials, sprite billboards instead of 3D models, and NPC behaviour expressed as a small bag of timers. Each one is worth knowing on its own.
+
+## Canvas as a texture source
+
+`THREE.CanvasTexture` takes any `HTMLCanvasElement` and turns it into a GPU texture. The trick is that the canvas can be drawn into using ordinary 2D context calls — `fillRect`, `arc`, `ellipse`, gradients — and the result is just a sampler the shaders can read. No PNG round-trip.
+
+```ts
+function makeFlowerTexture(petalColor: string) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const x = c.getContext('2d')!;
+  // stem
+  x.strokeStyle = '#2a7a2a'; x.lineWidth = 6;
+  x.beginPath(); x.moveTo(64, 128); x.lineTo(64, 70); x.stroke();
+  // petals around a centre
+  x.fillStyle = petalColor;
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    const px = 64 + Math.cos(a) * 22;
+    const py = 50 + Math.sin(a) * 22;
+    x.beginPath();
+    x.ellipse(px, py, 14, 9, a, 0, Math.PI * 2);
+    x.fill();
+  }
+  // golden centre
+  x.fillStyle = '#f4c400';
+  x.beginPath(); x.arc(64, 50, 10, 0, Math.PI * 2); x.fill();
+  return new THREE.CanvasTexture(c);
+}
+```
+
+What to notice: the function returns a texture, not a sprite. The same texture can feed a `SpriteMaterial` for a billboarded sprite, a `MeshBasicMaterial` for a flat plane, or `MeshLambertMaterial` for a shaded surface. One drawing routine, three different uses.
+
+Two settings matter once the texture exists. `texture.magFilter = THREE.NearestFilter` keeps pixel-art crisp instead of bilinearly blurring it. `texture.wrapS = texture.wrapT = THREE.RepeatWrapping` lets a small tile cover a large surface — the garden floor is one 128px grass square repeated across a 32 by 40 ground plane.
+
+The flower demo below is the runtime form of that texture function. Sliders feed petal count, hue, and centre size into the same canvas, redrawn every change. If the canvas were fed into `THREE.CanvasTexture`, the only extra step would be calling `texture.needsUpdate = true` after each redraw.
+
+<FlowerSpriteDemo client:load />
+
+The bigger payoff: when the prototype pivoted from dungeon to garden, the only edits needed were colour values. Same drawing routines, same texture wiring — a stone brick becomes painted stucco by swapping two hex codes. The mood is a parameter, not a commitment.
+
+## Sprite billboards for everything that moves
+
+The bees, the dogs, the flowers, the pee particles, the clouds — all sprites. `THREE.Sprite` is a quad that always faces the camera, with a material that uses the texture as an alpha-tested image. It is the cheapest way to put a recognisable thing in a 3D scene.
+
+```ts
+const mat = new THREE.SpriteMaterial({ map: dogTexture, transparent: true });
+const dog = new THREE.Sprite(mat);
+dog.scale.set(1.2, 1.2, 1);
+dog.position.set(worldX, 0.6, worldZ);
+scene.add(dog);
+```
+
+Three things are worth calling out. First, `transparent: true` plus an alpha channel in the canvas gives the cut-out silhouette without any extra geometry. Second, `scale` controls the on-screen size in world units, not pixels — a bee is `0.4 × 0.4`, a dog is `1.2 × 1.2`. Third, the sprite billboards itself for free; no per-frame `lookAt` is required.
+
+The bee projectiles use the same pattern with a twist. The bee sprite carries a velocity vector and advances every frame, with a sinusoidal vertical wobble layered on top so it visibly buzzes:
+
+```ts
+const wob = Math.sin(bee.wobble) * 0.04;
+bee.sprite.position.addScaledVector(bee.vel, dt);
+bee.sprite.position.y += wob;
+bee.wobble += dt * 25;
+```
+
+Collision is a sphere-test against flower positions and an axis-aligned-box test against walls — both cheap because they operate on bare vectors, not meshes. The same loop spawns a pollination burst on flower hit, or removes the bee on wall hit, or expires after two seconds. A projectile system in twenty lines.
+
+## Axis-separated collision
+
+Player collision deserves its own note because it solves the classic "stuck on a corner" bug. Naive collision tries to move the player by the full velocity vector, checks one box, and rejects the whole move on intersection. Result: brushing against a wall while strafing pins the player in place.
+
+The fix is to test each axis independently and accept whichever one is free:
+
+```ts
+const tryX = pos.clone(); tryX.x += move.x;
+if (!collides(tryX)) pos.x = tryX.x;
+const tryZ = pos.clone(); tryZ.z += move.z;
+if (!collides(tryZ)) pos.z = tryZ.z;
+```
+
+What to notice: each axis gets its own provisional position. Walking diagonally into a wall now slides along the wall instead of stopping cold, because the unblocked axis still applies. The `collides` function is a `Box3.intersectsBox` against an array of static AABBs — every wall and every furniture box has its bounding box cached at scene setup. No physics engine, just one loop and a boolean.
+
+## Synthesising sound effects in WebAudio
+
+No `.mp3` files were used. Every effect — the bee launching, the bee landing on a flower, the dogs barking, the pee stream hitting grass — is a few oscillator and gain nodes wired up at the moment of playback. WebAudio gives a graph-of-nodes API similar to a modular synth: signal sources connect to effects connect to destination.
+
+A bark, for example, is two short square-wave pulses with a pitched-down envelope:
+
+```ts
+function bark() {
+  const t = audioCtx.currentTime;
+  for (let k = 0; k < 2; k++) {
+    const o = audioCtx.createOscillator();
+    o.type = 'square';
+    o.frequency.setValueAtTime(420 + Math.random() * 120, t + k * 0.12);
+    o.frequency.exponentialRampToValueAtTime(180, t + k * 0.12 + 0.08);
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(0.18, t + k * 0.12);
+    g.gain.exponentialRampToValueAtTime(0.001, t + k * 0.12 + 0.1);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(t + k * 0.12);
+    o.stop(t + k * 0.12 + 0.1);
+  }
+}
+```
+
+The shape — pick a waveform, schedule a pitch ramp, schedule a volume envelope, fire it — is the template for every other effect. A bee launch is a triangle wave rising in pitch with a sawtooth buzz layered on. A pee stream is a band-pass-filtered noise burst with a slow attack and a long tail. A pollination chime is three sine pulses an octave-and-a-fifth apart.
+
+The browser will not start an `AudioContext` until a user gesture, so the first `audioCtx.resume()` happens implicitly when the player clicks to lock the pointer. Once the context is alive, all subsequent sounds play instantly with no scheduling lag.
+
+The demo below builds three of those effects directly in the browser. Each button triggers a node graph and disposes of it when the sound finishes.
+
+<GardenAudioDemo client:load />
+
+A note on cost: noise generation through `createBuffer` and filling its sample array is fine for short bursts but allocates memory every play. For a frequently fired effect, prefer an oscillator-based approximation, or pre-render the buffer once at startup and reuse the same `AudioBufferSourceNode` source clone.
+
+## NPC behaviour as a stack of timers
+
+The dogs are the most "alive" thing in the scene, and they are also the dumbest. Each dog is a struct with a position, a target position, and three countdown timers:
+
+```ts
+{
+  sprite,
+  target: Vector3,
+  pickTimer: number,   // when to choose a new wander destination
+  barkTimer: number,   // when to bark next
+  peeTimer: number,    // when to look for a pollinated flower to pee on
+  peeingAt: Flower | null,
+}
+```
+
+The update loop is a flat list of checks, in priority order:
+
+1. If `peeingAt` is set and the dog is within range of that flower, emit a pee particle stream, depollinate the flower, clear `peeingAt`, reset `peeTimer` to a longer interval.
+2. Otherwise, if `peeTimer` has hit zero, search the flower list for the nearest pollinated one. If found, set it as `peeingAt`. If not, push the timer out a few seconds.
+3. Otherwise, if the player is within six units, set the target to the player's position (the dog comes running).
+4. Otherwise, if the wander timer has expired or the dog reached its old target, pick a new random walkable point.
+5. Move toward the current target each frame; bark if the bark timer has expired.
+
+There is no state enum, no transition table, no FSM library. The behaviour emerges from the order of checks and the staggered timers. Re-pollinating the flower the dog just peed on creates a real arms race — every successful bee shot starts a stopwatch in some dog's head.
+
+The depollination step is what closes the loop. When a flower is hit by a bee, it scales up and the score increments. When a dog reaches it, the same flower scales back down, the score decrements, and the dog's pee timer resets — meaning a different dog with a different countdown might lock onto a different pollinated flower next.
+
+<DogStateMachineDemo client:load />
+
+The visualisation above is a faithful port of the dog AI. The same checks, the same priorities. The dog dot finds the nearest filled flower, walks to it, marks it back to empty, and ticks down its cooldown. Reset and watch the timing emerge.
+
+## What stayed when the style pivoted
+
+The Wolfenstein and the garden share more than 90 percent of their code. The grid layout, the wall placement, the collision, the bee-projectile loop, the dog AI, the audio graph — none of those changed. The pivot was a palette swap (four wall colours), a lighting swap (torch point-lights to a hemisphere plus sun), a sky swap (fog colour to gradient canvas), and a sprite swap (pistol to magic wand). About forty lines of edits.
+
+The shape of the prototype is what made that possible. Procedural everything keeps the "what" and the "how it looks" on opposite sides of a function boundary. Iterating on the look is then a different operation from iterating on the rules. That is the part to copy into other small prototypes — even ones that are not three.js. Build the systems against parameters, not pixels, and the entire visual language stays cheap to change.
