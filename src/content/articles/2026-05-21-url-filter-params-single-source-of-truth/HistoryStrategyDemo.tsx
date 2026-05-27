@@ -1,9 +1,17 @@
 import { useState } from 'react';
+import {
+  Demo,
+  Toolbar,
+  Spacer,
+  ToggleGroup,
+  Button,
+  Output,
+  Hint,
+} from '../../../components/demo';
 
 type Strategy = 'replace' | 'assign';
 
-const TIMEFRAMES = ['this_month', 'last_month', 'last_7_days', 'last_year'];
-
+const TIMEFRAMES = ['this_month', 'last_month', 'last_7_days', 'last_year'] as const;
 const ORIGIN = '/dashboard';
 
 export default function HistoryStrategyDemo() {
@@ -38,100 +46,51 @@ export default function HistoryStrategyDemo() {
   }
 
   return (
-    <div className="demo">
-      <div className="demo-label">Interactive · React</div>
-      <p style={{ marginTop: 0, fontSize: '0.9rem', color: 'var(--ink-soft)' }}>
-        Pick a few timeframes, then press <strong>Back</strong>. With{' '}
-        <code>location.replace</code>, the back button returns to the dashboard. With{' '}
-        <code>location.assign</code>, every filter change is its own entry.
-      </p>
+    <Demo>
+      <Hint>
+        Pick a few timeframes, then press <strong>Back</strong>. With <code>location.replace</code>,
+        the back button returns to the dashboard. With <code>location.assign</code>, every filter
+        change is its own entry.
+      </Hint>
 
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
-        {(['replace', 'assign'] as const).map((s) => (
-          <button
-            key={s}
-            onClick={() => reset(s)}
-            style={
-              s === strategy
-                ? { fontFamily: 'var(--mono)', fontSize: '0.85rem' }
-                : {
-                    background: 'transparent',
-                    color: 'var(--ink-soft)',
-                    border: '1px solid var(--rule)',
-                    fontFamily: 'var(--mono)',
-                    fontSize: '0.85rem',
-                  }
-            }
-          >
-            location.{s}
-          </button>
-        ))}
-      </div>
+      <Toolbar>
+        <ToggleGroup
+          value={strategy}
+          onChange={(s) => reset(s as Strategy)}
+          options={[
+            { value: 'replace', label: 'location.replace' },
+            { value: 'assign', label: 'location.assign' },
+          ]}
+        />
+      </Toolbar>
 
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', marginBottom: '0.75rem' }}>
-        {TIMEFRAMES.map((tf) => (
-          <button
-            key={tf}
-            onClick={() => pick(tf)}
-            style={{
-              background: 'transparent',
-              color: 'var(--ink-soft)',
-              border: '1px solid var(--rule)',
-              fontFamily: 'var(--mono)',
-              fontSize: '0.8rem',
-            }}
-          >
-            {tf}
-          </button>
-        ))}
-        <button
-          onClick={back}
-          disabled={pointer === 0}
-          style={{
-            fontFamily: 'var(--mono)',
-            fontSize: '0.8rem',
-            marginLeft: 'auto',
-          }}
-        >
+      <Toolbar>
+        <ToggleGroup
+          variant="pill"
+          value=""
+          onChange={pick}
+          options={TIMEFRAMES.map((tf) => ({ value: tf, label: tf }))}
+        />
+        <Spacer />
+        <Button variant="pill" onClick={back} disabled={pointer === 0}>
           ← Back
-        </button>
-      </div>
+        </Button>
+      </Toolbar>
 
-      <div
-        style={{
-          padding: '0.75rem',
-          border: '1px solid var(--rule)',
-          borderRadius: '4px',
-          fontFamily: 'var(--mono)',
-          fontSize: '0.85rem',
-        }}
-      >
-        <div style={{ color: 'var(--ink-soft)', marginBottom: '0.35rem' }}>history stack</div>
-        <ol style={{ margin: 0, paddingLeft: '1.25rem' }}>
+      <Output grid={false}>
+        <div className="label" style={{ marginBottom: '0.4rem' }}>history stack</div>
+        <ol className="history-stack">
           {stack.map((entry, i) => (
-            <li
-              key={i}
-              style={{
-                color: i === pointer ? 'inherit' : 'var(--ink-soft)',
-                fontWeight: i === pointer ? 600 : 400,
-              }}
-            >
-              {entry}
-              {i === pointer && (
-                <span style={{ marginLeft: '0.5rem', color: 'hsl(140 50% 45%)' }}>← here</span>
-              )}
+            <li key={i} className={i === pointer ? 'current' : undefined}>
+              <span className="entry">{entry}</span>
+              {i === pointer && <span className="here">← here</span>}
             </li>
           ))}
         </ol>
-        <div style={{ marginTop: '0.5rem', color: 'var(--ink-soft)', fontSize: '0.8rem' }}>
+        <div className="currently-viewing">
           currently viewing: <code>{current}</code>
         </div>
-      </div>
-
-      <p style={{ marginTop: '0.75rem', fontSize: '0.85rem', color: 'var(--ink-soft)' }}>
-        Selecting four timeframes with <code>assign</code> means four back-button presses to leave
-        the page. With <code>replace</code>, one press does it.
-      </p>
-    </div>
+      </Output>
+    </Demo>
   );
 }

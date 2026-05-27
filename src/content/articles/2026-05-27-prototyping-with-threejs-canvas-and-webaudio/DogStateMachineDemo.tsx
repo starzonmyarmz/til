@@ -1,8 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
-import { Demo, Toolbar, Button, Output, OutputRow, Hint } from '../../../components/demo';
+import {
+  Demo,
+  Toolbar,
+  Button,
+  Badge,
+  Output,
+  OutputRow,
+  Console,
+  Hint,
+} from '../../../components/demo';
+import type { ConsoleLine, Tone } from '../../../components/demo';
 
 type Flower = { x: number; y: number; pollinated: boolean };
 type State = 'wandering' | 'chasing' | 'seeking-flower';
+type LogEntry = { line: string; tone: Tone; count: number };
 
 const W = 320;
 const H = 200;
@@ -19,10 +30,20 @@ function makeFlowers(): Flower[] {
   return arr;
 }
 
+function pushLog(log: LogEntry[], line: string, tone: Tone = 'info') {
+  const last = log[0];
+  if (last && last.line === line) {
+    last.count += 1;
+  } else {
+    log.unshift({ line, tone, count: 1 });
+    if (log.length > 8) log.length = 8;
+  }
+}
+
 export default function DogStateMachineDemo() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [running, setRunning] = useState(true);
-  const [tick, setTick] = useState(0);
+  const [, setTick] = useState(0);
 
   const stateRef = useRef({
     dog: { x: W * 0.2, y: H * 0.6 },
@@ -34,7 +55,7 @@ export default function DogStateMachineDemo() {
     peeingAt: null as number | null,
     state: 'wandering' as State,
     flowers: makeFlowers(),
-    log: [] as string[],
+    log: [] as LogEntry[],
   });
 
   function reset() {
@@ -59,7 +80,7 @@ export default function DogStateMachineDemo() {
     if (empty.length === 0) return;
     const pick = empty[Math.floor(Math.random() * empty.length)];
     pick.pollinated = true;
-    s.log.unshift(`bee → flower (${Math.round(pick.x)},${Math.round(pick.y)}) pollinated`);
+    pushLog(s.log, `bee → flower (${Math.round(pick.x)},${Math.round(pick.y)}) pollinated`, 'good');
     setTick((t) => t + 1);
   }
 
@@ -81,7 +102,7 @@ export default function DogStateMachineDemo() {
         const d = Math.hypot(dx, dy);
         if (d < 8) {
           f.pollinated = false;
-          s.log.unshift(`dog peed on flower #${s.peeingAt} → depollinated`);
+          pushLog(s.log, `dog peed on flower #${s.peeingAt} → depollinated`, 'bad');
           s.peeingAt = null;
           s.peeTimer = rand(4, 7);
           s.state = 'wandering';
@@ -109,7 +130,7 @@ export default function DogStateMachineDemo() {
           });
           if (best >= 0) {
             s.peeingAt = best;
-            s.log.unshift(`dog locked on flower #${best}`);
+            pushLog(s.log, `dog locked on flower #${best}`, 'warn');
             s.state = 'seeking-flower';
           } else {
             s.peeTimer = 2;
@@ -152,7 +173,7 @@ export default function DogStateMachineDemo() {
       s.barkTimer -= dt;
       if (s.barkTimer <= 0) {
         const near = Math.hypot(s.player.x - s.dog.x, s.player.y - s.dog.y) < 70;
-        s.log.unshift(`woof! (${near ? 'near player' : 'idle'})`);
+        pushLog(s.log, `woof! (${near ? 'near player' : 'idle'})`, near ? 'warn' : 'info');
         s.barkTimer = near ? rand(1.5, 3) : rand(5, 9);
       }
 
@@ -224,8 +245,13 @@ export default function DogStateMachineDemo() {
     stateRef.current.player.y = py;
   }
 
-  const toneFor = (state: State) =>
+  const toneFor = (state: State): Tone =>
     state === 'chasing' ? 'warn' : state === 'seeking-flower' ? 'bad' : 'good';
+
+  const logLines: ConsoleLine[] = s.log.map((entry) => ({
+    line: entry.count > 1 ? `${entry.line}  ×${entry.count}` : entry.line,
+    tone: entry.tone,
+  }));
 
   return (
     <Demo>
@@ -235,41 +261,39 @@ export default function DogStateMachineDemo() {
         </Button>
         <Button onClick={pollinateRandom}>🐝 pollinate one</Button>
         <Button onClick={reset}>reset</Button>
+        <span style={{ marginLeft: 'auto' }}>
+          <Badge tone={toneFor(s.state)}>{s.state}</Badge>
+        </span>
       </Toolbar>
 
-      <Output grid>
-        <OutputRow label="scene:">
-          <canvas
-            ref={canvasRef}
-            width={W}
-            height={H}
-            onClick={onCanvasClick}
-            style={{
-              width: '100%',
-              maxWidth: W,
-              height: 'auto',
-              imageRendering: 'pixelated',
-              border: '1px solid var(--rule)',
-              cursor: 'crosshair',
-            }}
-          />
-        </OutputRow>
-        <OutputRow label="state:">
-          <span data-tone={toneFor(s.state)}>{s.state}</span>
-        </OutputRow>
+      <div style={{ display: 'flex', justifyContent: 'center', margin: '0.5rem 0 1rem' }}>
+        <canvas
+          ref={canvasRef}
+          width={W}
+          height={H}
+          onClick={onCanvasClick}
+          style={{
+            width: '100%',
+            maxWidth: W,
+            height: 'auto',
+            imageRendering: 'pixelated',
+            border: '1px solid var(--rule)',
+            borderRadius: 4,
+            cursor: 'crosshair',
+            background: '#f4f0e0',
+          }}
+        />
+      </div>
+
+      <Output>
         <OutputRow label="pee cooldown:">{s.peeTimer.toFixed(1)}s</OutputRow>
         <OutputRow label="bark cooldown:">{s.barkTimer.toFixed(1)}s</OutputRow>
         <OutputRow label="wander cooldown:">{s.pickTimer.toFixed(1)}s</OutputRow>
-        <OutputRow label="log:">
-          <div style={{ fontFamily: 'var(--mono)', fontSize: '0.78rem', lineHeight: 1.6 }}>
-            {s.log.slice(0, 6).map((line, i) => (
-              <div key={i} style={{ opacity: 1 - i * 0.13 }}>
-                {line}
-              </div>
-            ))}
-          </div>
-        </OutputRow>
       </Output>
+
+      <div style={{ marginTop: '0.75rem' }}>
+        <Console lines={logLines} placeholder="// waiting for the dog to do something…" />
+      </div>
 
       <Hint>
         Click the canvas to reposition the player. Pink dots are pollinated flowers; grey dots are

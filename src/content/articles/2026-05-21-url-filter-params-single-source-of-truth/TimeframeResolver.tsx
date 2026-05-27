@@ -3,6 +3,7 @@ import {
   Demo,
   Toolbar,
   ToggleGroup,
+  Field,
   Input,
   Output,
   OutputRow,
@@ -99,26 +100,16 @@ export default function TimeframeResolver() {
         />
       </Toolbar>
 
-      <label
-        style={{
-          display: 'block',
-          fontFamily: 'var(--mono)',
-          fontSize: '0.8rem',
-          color: 'var(--ink-soft)',
-          marginBottom: '0.25rem',
-        }}
-      >
-        raw param value
-      </label>
-      <Input
-        type="text"
-        value={raw}
-        onChange={(e) => setRaw(e.target.value)}
-        placeholder="?timeframe="
-        style={{ marginBottom: '0.75rem' }}
-      />
+      <Field label="raw param value">
+        <Input
+          type="text"
+          value={raw}
+          onChange={(e) => setRaw(e.target.value)}
+          placeholder="?timeframe="
+        />
+      </Field>
 
-      <Output grid>
+      <Output>
         <OutputRow label="raw:">
           {raw === '' ? <em style={{ color: 'var(--ink-soft)' }}>(empty)</em> : raw}
         </OutputRow>

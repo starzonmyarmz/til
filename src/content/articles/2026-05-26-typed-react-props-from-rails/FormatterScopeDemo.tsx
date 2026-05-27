@@ -54,7 +54,7 @@ export default function FormatterScopeDemo() {
       </Toolbar>
 
       {results && (
-        <Output grid>
+        <Output>
           <OutputRow label="constructed each call:">
             {results.inline.toFixed(2)} ms
           </OutputRow>

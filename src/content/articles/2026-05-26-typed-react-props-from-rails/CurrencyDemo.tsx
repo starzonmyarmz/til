@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Demo, Toolbar, ToggleGroup, Output, OutputRow, Hint } from '../../../components/demo';
+import { Demo, Toolbar, ToggleGroup, Slider, Output, OutputRow, Hint } from '../../../components/demo';
 
 const LOCALES: { value: string; label: string; currency: string }[] = [
   { value: 'en-US', label: 'en-US · USD', currency: 'USD' },
@@ -32,25 +32,19 @@ export default function CurrencyDemo() {
         />
       </Toolbar>
 
-      <Toolbar>
-        <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', width: '100%' }}>
-          <span style={{ fontFamily: 'var(--mono)', fontSize: '0.85rem', minWidth: '4ch' }}>
-            cents
-          </span>
-          <input
-            type="range"
-            min={0}
-            max={50000000}
-            step={1}
-            value={cents}
-            onChange={(e) => setCents(Number(e.target.value))}
-            style={{ flex: 1 }}
-          />
-        </label>
-      </Toolbar>
+      <Slider
+        label="cents"
+        min={0}
+        max={50000000}
+        value={cents}
+        onChange={setCents}
+        format={(v) => v.toLocaleString('en-US')}
+      />
 
-      <Output grid>
-        <OutputRow label="on the wire:">{cents.toLocaleString('en-US')} ({currency} minor units)</OutputRow>
+      <Output>
+        <OutputRow label="on the wire:">
+          {cents.toLocaleString('en-US')} ({currency} minor units)
+        </OutputRow>
         <OutputRow label="divide by 100:">{(cents / 100).toString()}</OutputRow>
         <OutputRow label="Intl output:">{formatted}</OutputRow>
       </Output>

@@ -50,7 +50,7 @@ export default function DateDemo() {
         <Input value={iso} onChange={(e) => setIso(e.target.value)} />
       </Field>
 
-      <Output grid>
+      <Output>
         <OutputRow label="parsed Date:">
           {(() => {
             const d = new Date(iso);

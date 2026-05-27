@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Demo, Toolbar, Field, Output, OutputRow, Hint } from '../../../components/demo';
+import { Demo, Slider, Output, OutputRow, Hint } from '../../../components/demo';
 
 export default function FlowerSpriteDemo() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -51,72 +51,56 @@ export default function FlowerSpriteDemo() {
 
   return (
     <Demo>
-      <Toolbar>
-        <Field label="petals">
-          <input
-            type="range"
-            min={3}
-            max={16}
-            step={1}
-            value={petals}
-            onChange={(e) => setPetals(Number(e.target.value))}
-            style={{ flex: 1 }}
-          />
-          <span style={{ fontFamily: 'var(--mono)', minWidth: '2ch', textAlign: 'right' }}>
-            {petals}
-          </span>
-        </Field>
-      </Toolbar>
-      <Toolbar>
-        <Field label="hue">
-          <input
-            type="range"
-            min={0}
-            max={359}
-            step={1}
-            value={hue}
-            onChange={(e) => setHue(Number(e.target.value))}
-            style={{ flex: 1 }}
-          />
-          <span style={{ fontFamily: 'var(--mono)', minWidth: '3ch', textAlign: 'right' }}>
-            {hue}
-          </span>
-        </Field>
-      </Toolbar>
-      <Toolbar>
-        <Field label="centre">
-          <input
-            type="range"
-            min={4}
-            max={18}
-            step={1}
-            value={centerSize}
-            onChange={(e) => setCenterSize(Number(e.target.value))}
-            style={{ flex: 1 }}
-          />
-          <span style={{ fontFamily: 'var(--mono)', minWidth: '2ch', textAlign: 'right' }}>
-            {centerSize}
-          </span>
-        </Field>
-      </Toolbar>
+      <Slider label="petals" min={3} max={16} value={petals} onChange={setPetals} />
+      <Slider label="hue" min={0} max={359} value={hue} onChange={setHue} />
+      <Slider label="centre" min={4} max={18} value={centerSize} onChange={setCenterSize} />
 
-      <Output grid>
-        <OutputRow label="canvas:">
-          <canvas
-            ref={canvasRef}
-            width={128}
-            height={128}
-            style={{
-              width: 128,
-              height: 128,
-              imageRendering: 'pixelated',
-              background: 'transparent',
-              border: '1px solid var(--rule)',
-            }}
-          />
+      <div style={{ display: 'flex', justifyContent: 'center', margin: '1rem 0' }}>
+        <canvas
+          ref={canvasRef}
+          width={128}
+          height={128}
+          style={{
+            width: 128,
+            height: 128,
+            imageRendering: 'pixelated',
+            background: 'transparent',
+            border: '1px solid var(--rule)',
+          }}
+        />
+      </div>
+
+      <Output>
+        <OutputRow label="petal fill:">
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+            <span
+              style={{
+                display: 'inline-block',
+                width: '0.85em',
+                height: '0.85em',
+                borderRadius: 3,
+                background: petalColor,
+                border: '1px solid var(--rule)',
+              }}
+            />
+            {petalColor}
+          </span>
         </OutputRow>
-        <OutputRow label="petal fill:">{petalColor}</OutputRow>
-        <OutputRow label="centre fill:">{centerColor}</OutputRow>
+        <OutputRow label="centre fill:">
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+            <span
+              style={{
+                display: 'inline-block',
+                width: '0.85em',
+                height: '0.85em',
+                borderRadius: 3,
+                background: centerColor,
+                border: '1px solid var(--rule)',
+              }}
+            />
+            {centerColor}
+          </span>
+        </OutputRow>
         <OutputRow label="three.js step:">new THREE.CanvasTexture(canvas)</OutputRow>
       </Output>
 

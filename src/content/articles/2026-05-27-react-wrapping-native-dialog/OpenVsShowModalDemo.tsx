@@ -35,7 +35,7 @@ export default function OpenVsShowModalDemo() {
             { value: 'showModal', label: 'showModal()' },
             { value: 'open', label: 'open attribute' },
           ]}
-          variant="primary"
+          variant="pill"
         />
         <Button onClick={() => setIsOpen((v) => !v)}>
           {isOpen ? 'Close' : 'Open'} dialog
