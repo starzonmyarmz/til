@@ -519,6 +519,7 @@ a:hover {
   border: 1px solid var(--rule);
   border-radius: 4px;
   background: transparent;
+  margin-top: 0.75rem;
 }
 .demo .output .label {
   color: var(--ink-soft);

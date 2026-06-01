@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Demo, ToggleGroup, Output, OutputRow, Badge, Hint } from '../../../components/demo';
+import { Demo, Toolbar, ToggleGroup, Output, OutputRow, Badge, Hint } from '../../../components/demo';
 
 type Mode = 'inferred' | 'annotated';
 
@@ -15,16 +15,18 @@ export default function NullStateDemo() {
 
   return (
     <Demo>
-      <ToggleGroup
-        value={mode}
-        onChange={(v) => setMode(v as Mode)}
-        variant="primary"
-        options={[
-          { value: 'inferred', label: 'useState(null)' },
-          { value: 'annotated', label: 'useState<Error | null>(null)' },
-        ]}
-      />
-      <Output grid={false}>
+      <Toolbar>
+        <ToggleGroup
+          value={mode}
+          onChange={(v) => setMode(v as Mode)}
+          variant="primary"
+          options={[
+            { value: 'inferred', label: 'useState(null)' },
+            { value: 'annotated', label: 'useState<Error | null>(null)' },
+          ]}
+        />
+      </Toolbar>
+      <Output>
         <OutputRow label="error state type:">
           <code>{stateType}</code>
         </OutputRow>
