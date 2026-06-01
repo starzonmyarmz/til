@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Demo, ToggleGroup, Output, OutputRow, Badge, Hint } from '../../../components/demo';
+import { Demo, Toolbar, ToggleGroup, Output, OutputRow, Badge, Hint } from '../../../components/demo';
 
 type Form = 'shorthand' | 'href';
 
@@ -13,16 +13,18 @@ export default function LocationSetterDemo() {
 
   return (
     <Demo>
-      <ToggleGroup
-        value={form}
-        onChange={(v) => setForm(v as Form)}
-        variant="primary"
-        options={[
-          { value: 'shorthand', label: 'window.location = url' },
-          { value: 'href', label: 'window.location.href = url' },
-        ]}
-      />
-      <Output grid={false}>
+      <Toolbar>
+        <ToggleGroup
+          value={form}
+          onChange={(v) => setForm(v as Form)}
+          variant="primary"
+          options={[
+            { value: 'shorthand', label: 'window.location = url' },
+            { value: 'href', label: 'window.location.href = url' },
+          ]}
+        />
+      </Toolbar>
+      <Output>
         <OutputRow label="assigning to:">
           <code>{target}</code>
         </OutputRow>

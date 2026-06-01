@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Demo, ToggleGroup, Output, OutputRow, Badge, Hint } from '../../../components/demo';
+import { Demo, Toolbar, ToggleGroup, Output, OutputRow, Badge, Hint } from '../../../components/demo';
 
 type Annotation = 'empty-array' | 'empty-object' | 'named';
 
@@ -35,21 +35,23 @@ export default function EmptyTypesDemo() {
 
   return (
     <Demo>
-      <ToggleGroup
-        value={annotation}
-        onChange={(v) => setAnnotation(v as Annotation)}
-        variant="pill"
-        options={[
-          { value: 'empty-array', label: '[]' },
-          { value: 'empty-object', label: '{}' },
-          { value: 'named', label: 'Country[]' },
-        ]}
-      />
-      <Output grid={false}>
+      <Toolbar>
+        <ToggleGroup
+          value={annotation}
+          onChange={(v) => setAnnotation(v as Annotation)}
+          variant="pill"
+          options={[
+            { value: 'empty-array', label: '[]' },
+            { value: 'empty-object', label: '{}' },
+            { value: 'named', label: 'Country[]' },
+          ]}
+        />
+      </Toolbar>
+      <Output>
         <OutputRow label="annotation:">{labels[annotation]}</OutputRow>
         <OutputRow label="means:">{meaning[annotation]}</OutputRow>
       </Output>
-      <Output grid={false}>
+      <Output>
         {cases.map((c) => (
           <OutputRow key={c.value} label={c.value}>
             {accepts(c) ? (
