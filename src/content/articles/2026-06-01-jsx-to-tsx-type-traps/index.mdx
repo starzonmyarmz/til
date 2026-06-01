@@ -1,0 +1,157 @@
+---
+title: "Four type traps hiding in a JSX-to-TSX conversion"
+date: 2026-06-01
+description: "Renaming a React file to .tsx surfaces empty-array prop types, the location setter that wants a Location, null-inferred state, and a JavaScript default that poisons every caller. Each one and its fix."
+tags: ["typescript", "react"]
+---
+
+Renaming a React component from `.jsx` to `.tsx` is the cheap part. The file compiles the moment it lands, but the type checker has opinions it kept to itself while the file was plain JavaScript. A small component — a form wrapper that posts to an API — produced six errors on conversion, and they sorted into four distinct lessons. None of them are exotic. All of them are the kind of thing that reads as noise until the shape behind it clicks.
+
+This walks through each trap in the order the checker reported it, with the smallest fix that resolves the category rather than the single line.
+
+## The placeholder types that compile but mean nothing
+
+The original file already carried a hand-written prop type, written by someone who wanted *something* in the annotation slot and moved on:
+
+```tsx
+type NewCampusProps = {
+  countries: []
+  time_zones: []
+  organization: {}
+  done_location: string
+  ccapp_enabled: boolean
+}
+```
+
+`countries: []` looks like “an array,” but it isn’t. In TypeScript `[]` is the empty *tuple* — an array type with exactly zero elements. The only value assignable to it is a literal empty array. Pass `[{ id: "US" }]` and the checker rejects it. The annotation was quietly asserting the list is always empty.
+
+`organization: {}` is the opposite failure. `{}` does not mean “an empty object.” It means “any value that isn’t `null` or `undefined`” — a string satisfies `{}`, a number satisfies `{}`. So `organization.country_code` can’t be read, because `{}` promises no properties at all. The annotation accepts almost everything and lets you access almost nothing.
+
+The fix is to name the real shapes. The component hands these straight to a child form, so the shapes come from what the form actually reads:
+
+```tsx
+type Country = { id: string; name: string }
+type TimeZone = { id: string; name: string }
+type Organization = { country_code: string; time_zone: string }
+
+type NewCampusProps = {
+  countries: Country[]
+  time_zones: TimeZone[]
+  organization: Organization
+  done_location: string
+  ccapp_enabled: boolean
+}
+```
+
+What to notice: `Country[]` is the array type that holds any number of `Country` values — the thing `[]` was mistaken for. The demo below lets you see what each placeholder actually accepts versus what the named type accepts.
+
+import EmptyTypesDemo from './EmptyTypesDemo.tsx';
+
+<EmptyTypesDemo client:load />
+
+The takeaway is that `[]` and `{}` are not synonyms for “array” and “object.” They’re precise types that happen to look like the loose ones, which is exactly why they survive code review. A `.jsx` file never evaluates them; a `.tsx` file does, immediately.
+
+## State that infers itself into a corner
+
+Two lines of state looked harmless:
+
+```tsx
+const [error, setError] = useState(null)
+const [apiErrors, setApiErrors] = useState([])
+```
+
+`useState(null)` has no type argument, so TypeScript infers the state type from the initial value. The initial value is `null`, and the inferred type is `null` — not “maybe an error, currently null,” just `null`. Later the component renders `error.message`, and the checker reports:
+
+```
+Property 'message' does not exist on type 'never'.
+```
+
+`never` shows up because the only way `error` could be read in that branch is after a narrowing the checker can’t see, and `null` has no `message` regardless. The same trap sits in `useState([])`: the inferred type is `never[]`, an array that can only ever hold nothing, so `setApiErrors(json.errors)` fails.
+
+The fix is to tell `useState` the full range the value will take, using its type parameter:
+
+```tsx
+const [error, setError] = useState<Error | null>(null)
+const [apiErrors, setApiErrors] = useState<ApiError[]>([])
+```
+
+What to notice: the initial value is still `null` and `[]`. Nothing about the runtime behavior changed. The annotation only widens the *type* from “whatever the first value was” to “the values this state will actually hold over its lifetime.” Inference reads the first frame; the type parameter describes the whole movie.
+
+import NullStateDemo from './NullStateDemo.tsx';
+
+<NullStateDemo client:load />
+
+A useful habit falls out of this: any `useState` whose initial value is `null`, `undefined`, or `[]` almost always needs an explicit type argument, because the initial value is deliberately *not* representative of what the state becomes.
+
+## Assigning to window.location
+
+The component navigates by assigning a URL:
+
+```tsx
+window.location = done_location
+```
+
+In a `.jsx` file this is fine — it’s a real, supported browser behavior. Assigning a string to `window.location` triggers navigation. But the DOM type definitions describe `window.location` as `string & Location`, an intersection type, and the error reads:
+
+```
+Type 'string' is not assignable to type 'string & Location'.
+```
+
+The intersection encodes a genuine quirk of the platform. `location` is a `Location` object — it has `.href`, `.reload()`, `.assign()`. But the property’s *setter* also accepts a bare string for navigation. The type library models “you can read a `Location` and write a string” by intersecting the two, and a plain `string` doesn’t satisfy `string & Location` because it isn’t also a `Location`.
+
+The fix is to stop leaning on the legacy string-setter and assign the property that was always meant for this:
+
+```tsx
+window.location.href = done_location
+```
+
+What to notice: `location.href` is typed as a plain `string`, so the assignment is clean, and it does exactly what the shorthand did. The shorthand isn’t wrong at runtime — it’s a convenience the type system declines to bless because its signature is contradictory. The demo contrasts the two assignments and the error one of them raises.
+
+import LocationSetterDemo from './LocationSetterDemo.tsx';
+
+<LocationSetterDemo client:load />
+
+## The JavaScript default that poisons every caller
+
+The most interesting error didn’t point at the converted file’s own logic. It pointed at a request body:
+
+```
+Type '{ data: {...} }' is not assignable to type 'null | undefined'.
+```
+
+The component calls a shared `request` helper that still lives in a `.js` file. With `allowJs` and `checkJs` turned on, TypeScript type-checks that JavaScript too — and infers types from it. The helper’s signature:
+
+```js
+export async function request(
+  route,
+  { app = "accounts", data = null, method = "GET", headers = {} } = {}
+) {
+```
+
+`data = null` is a default parameter value. With no other information, TypeScript infers the parameter’s type from that default: `null`. So every caller in the codebase that passes a request body — an object — is handing an object to a parameter the checker believes is `null`. The error surfaced in the converted file only because that file was the first one strict enough to be checked against the helper.
+
+The fix doesn’t require converting the helper to TypeScript. A JSDoc annotation tells the checker the real type while leaving the JavaScript untouched:
+
+```js
+/**
+ * @param {string} route
+ * @param {{ app?: string, data?: object | null, method?: string, headers?: Record<string, string> }} [options]
+ */
+export async function request(route, { app = "accounts", data = null, /* … */ } = {}) {
+```
+
+What to notice: the default value stays `null`, so the runtime behavior is identical. The JSDoc widens `data` from the inferred `null` to `object | null`, which is what it always accepted. One annotation on the shared helper cleared the same error in three unrelated files that all call it — the fix belongs at the source, not at each call site.
+
+This is the trap that rewards looking upstream. The instinct on seeing an error inside the file under conversion is to fix something inside that file. But the type was wrong in a dependency, and casting the call site would have buried the real defect while leaving every other caller exposed. The shape of the error — `data` typed as `null` — is the tell that the helper, not the caller, is the problem.
+
+## Why fixing one error revealed another
+
+A smaller observation, worth a sentence because it confuses people the first time. After the `organization: {}` placeholder became a real `Organization` type, a *new* error appeared on the child form: two required props weren’t being passed. They were missing before the conversion too. TypeScript reports one error per JSX element at a time — the malformed `organization` value was failing first, masking the missing-props check behind it. Fix the first, the next steps forward.
+
+The child form’s prop types come from a `prop-types` runtime declaration, which TypeScript reads through `InferProps`. Props marked `.isRequired` there become mandatory in the type, even though the runtime only warns. The two props — flags that gate a delete-confirmation flow — are never exercised by a creation form, so passing `false` satisfies the contract without changing behavior. The lesson is just that an error count going *up* after a fix isn’t a regression. It’s the checker getting far enough to see the next real problem.
+
+## What the conversion was actually worth
+
+None of these four were bugs the test suite would have caught, because none of them changed runtime behavior. The empty-tuple type and the `{}` type were lies that happened to be consistent with the one code path exercised. The `null`-inferred state worked because the narrowing happened to hold. The string-to-`location` assignment navigates correctly. The `data: null` inference described a helper that, at runtime, took whatever it was given.
+
+The value of the conversion isn’t that it found breakage. It’s that it forced four loose contracts to become precise — the prop shapes, the state ranges, the navigation API, the helper signature — and a precise contract is one the next change can’t violate silently. The renaming is cosmetic. The errors it surfaces are the actual work.
