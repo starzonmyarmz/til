@@ -638,6 +638,8 @@ a:hover {
   background: transparent;
   line-height: 1.4;
   vertical-align: baseline;
+  overflow-wrap: anywhere;
+  max-width: 100%;
 }
 
 @media (max-width: 640px) {
@@ -680,6 +682,12 @@ a:hover {
   }
   .demo pre {
     font-size: 0.78rem;
+  }
+  .demo .output.grid {
+    grid-template-columns: 1fr;
+  }
+  .demo .output.grid .label {
+    white-space: normal;
   }
   .index-item h2 {
     font-size: 1.15rem;
