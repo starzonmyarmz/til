@@ -1,0 +1,213 @@
+---
+title: "Four refactors that cleaned up a React form"
+date: 2026-06-17
+description: "Collapsing eleven useState hooks into one, building an error-lookup Map once with useMemo, hoisting a component out of an event handler, and writing a generic field updater in TypeScript."
+tags: ["react", "typescript", "performance"]
+---
+
+import FormStateDemo from './FormStateDemo.tsx';
+import ErrorMapDemo from './ErrorMapDemo.tsx';
+import HoistDemo from './HoistDemo.tsx';
+import UpdateFieldDemo from './UpdateFieldDemo.tsx';
+
+A form component accumulates clutter in predictable ways. Each field gets its own `useState` pair. Error helpers repeat the same lookup. A sub-component grows inside a click handler because that's where it was first needed. None of these patterns are wrong exactly — they're just easy to let slide.
+
+Here are four patterns that came up in a single pass through a medium-sized form, in the order they make the most sense to tackle.
+
+---
+
+## 1. Collapse N field states into one form object
+
+The original component had eleven separate state declarations — one per field:
+
+```tsx
+const [name, setName] = useState(campus.name)
+const [street, setStreet] = useState(campus.street)
+const [city, setCity] = useState(campus.city)
+const [state, setState] = useState(campus.state)
+const [zip, setZip] = useState(campus.zip)
+const [country, setCountry] = useState(campus.country)
+const [timeZone, setTimeZone] = useState(campus.timeZone)
+const [latitude, setLatitude] = useState(campus.latitude)
+const [longitude, setLongitude] = useState(campus.longitude)
+const [geolocationSetManually, setGeolocationSetManually] = useState(campus.geolocationSetManually)
+const [churchCenterEnabled, setChurchCenterEnabled] = useState(campus.churchCenterEnabled)
+```
+
+And a function at submit time that rebuilt them into a single object:
+
+```tsx
+const campusAttributes = () => ({
+  name,
+  street,
+  city,
+  // ... nine more lines
+  church_center_enabled: churchCenterEnabled,
+})
+```
+
+The fix: one `useState` holding all the fields, and a single `updateField` helper that spreads in the changed key.
+
+```tsx
+const [form, setForm] = useState(() => initializeForm(attributes, { timeZones, organization }))
+
+const updateField = (field, value) =>
+  setForm((prev) => ({ ...prev, [field]: value }))
+```
+
+`onChange` handlers go from `(e) => setStreet(e.target.value)` to `(e) => updateField('street', e.target.value)`. The submit-time reassembly becomes a straightforward mapping from the form object's camelCase keys to the API's snake_case keys.
+
+The initializer is passed as a function (`() => initializeForm(...)`) rather than a value. That makes it *lazy* — it runs once on mount, not on every render. When the initialization does meaningful work (finding a timezone by ID, normalizing nulls), lazy init matters.
+
+<FormStateDemo client:load />
+
+---
+
+## 2. Build the error lookup once with useMemo
+
+The form had two error helpers, each called multiple times per render:
+
+```tsx
+const hasApiError = (property) => {
+  const propsArray = apiErrors.map((err) => err.source.parameter)  // rebuilt every call
+  return [].concat(property).some((v) => propsArray.indexOf(v) >= 0)
+}
+
+const apiErrorText = (property) => {
+  if (!hasApiError(property)) return undefined
+  const index = apiErrors.map((err) => err.source.parameter).indexOf(property)  // rebuilt again
+  const error = apiErrors[index]
+  // ...
+}
+```
+
+Each call to `hasApiError` and `apiErrorText` walks the full `apiErrors` array from scratch. For a form with ten fields, that's twenty or more array scans on every render that happens to have errors.
+
+The fix: build a `Map` once, keyed by parameter name.
+
+```tsx
+const errorsByParam = useMemo(
+  () => new Map(
+    (apiErrors ?? []).map((err) => [err.source.parameter, err.detail])
+  ),
+  [apiErrors]
+)
+
+const hasApiError = (property) =>
+  [].concat(property).some((p) => errorsByParam.has(p))
+
+const apiErrorText = (property) => {
+  const detail = errorsByParam.get(property)
+  if (detail === undefined) return undefined
+  return `${property.charAt(0).toUpperCase()}${property.slice(1)} ${detail}`
+}
+```
+
+`useMemo` with `[apiErrors]` as the dependency means the Map is only rebuilt when the error list actually changes — which is rare (only after a failed save). Every subsequent `hasApiError` and `apiErrorText` call is a constant-time Map lookup.
+
+There's a second benefit: `apiErrorText` had a near-identical sibling (`apiErrorMessage`) that returned JSX instead of a string. Once both helpers drew from the same Map, the JSX version turned out to be redundant — its only caller wanted a string after all. Deduplication followed naturally.
+
+<ErrorMapDemo client:load />
+
+---
+
+## 3. Hoist components out of event handlers
+
+The delete button opened a confirmation dialog. The content of that dialog was a component — but it was *defined inside the click handler*:
+
+```tsx
+const onDeleteCampus = () => {
+  const DeleteAlertText = () => {   // ← defined fresh on every click
+    if (ccappEnabled && multiCampus) {
+      return <> ... </>
+    } else if (ccappEnabled && !multiCampus) {
+      return <> ... </>
+    }
+    return <DeleteImpactsList ... />
+  }
+
+  SweetestAlert({
+    content: <DeleteAlertText />,
+    // ...
+  })
+}
+```
+
+React creates a *new component type* every time `onDeleteCampus` runs, because `DeleteAlertText` is a new function reference each time. That forces a full unmount-remount of anything React renders from it — it can't reconcile against the previous tree because the type changed.
+
+The fix is to hoist `DeleteAlertText` to module level, outside of the `Form` function entirely, and pass the values it needs as props:
+
+```tsx
+// At module level — created once, stable type reference
+const DeleteAlertText = ({ ccappEnabled, multiCampus, checkInsMultiCampus, churchAnnouncements }) => {
+  if (ccappEnabled && multiCampus) return <> ... </>
+  if (ccappEnabled && !multiCampus) return <> ... </>
+  return <DeleteImpactsList churchAnnouncements={churchAnnouncements} />
+}
+
+// Inside Form
+const onDeleteCampus = () => {
+  SweetestAlert({
+    content: (
+      <DeleteAlertText
+        ccappEnabled={ccappEnabled}
+        multiCampus={multiCampus}
+        checkInsMultiCampus={checkInsMultiCampus}
+        churchAnnouncements={churchAnnouncements}
+      />
+    ),
+    // ...
+  })
+}
+```
+
+Notice the early-return structure replaced the `if / else if / else` chain. Each condition returns immediately; the final `return` covers the default. Easier to scan and no nesting.
+
+<HoistDemo client:load />
+
+---
+
+## 4. A generic field updater in TypeScript
+
+When converting `updateField` to TypeScript, the naive signature works but loses precision:
+
+```tsx
+// Works, but 'value' is any — no compile-time check
+const updateField = (field: string, value: any) =>
+  setForm((prev) => ({ ...prev, [field]: value }))
+```
+
+A constrained generic ties the value type to the key:
+
+```tsx
+const updateField = <K extends keyof FormValues>(field: K, value: FormValues[K]) =>
+  setForm((prev) => ({ ...prev, [field]: value }))
+```
+
+`K extends keyof FormValues` restricts `field` to only keys that exist in `FormValues`. `FormValues[K]` then resolves the *exact* type for that key. Passing a number into a `string` field, or `"true"` (string) into a `boolean` field, is a compile error.
+
+```tsx
+type FormValues = {
+  name: string
+  churchCenterEnabled: boolean
+  geolocationSetManually: boolean
+  // ...
+}
+
+updateField("name", "Main Campus")        // ✓ string
+updateField("churchCenterEnabled", true)  // ✓ boolean
+updateField("churchCenterEnabled", "yes") // ✗ Type 'string' not assignable to 'boolean'
+updateField("typo", "value")              // ✗ Argument of type '"typo"' not assignable to keyof FormValues
+```
+
+The pattern shows up any time a helper takes a key and a value together. It's especially useful on `updateField`-style helpers, `pick`/`omit` utilities, and any function that reads or writes by dynamic key.
+
+<UpdateFieldDemo client:load />
+
+---
+
+## The order matters
+
+These four changes compound. Collapsing state into one object creates a natural `FormValues` type — which makes the generic updater possible. The generic updater replaces every inline `setXxx` call with `updateField("xxx", ...)` — which makes the diff easier to read and the `useMemo` error helpers easier to audit (no setters mixed in). And hoisting `DeleteAlertText` can happen independently, but it's easier to spot when the handler itself is already cleaner.
+
+None of them require a framework upgrade, a new dependency, or a component restructure. They're all small moves that leave the shape of the code cleaner than they found it.
