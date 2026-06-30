@@ -1,0 +1,167 @@
+---
+title: "What converting an old form to TypeScript turned up"
+date: 2026-06-30
+description: "Converting a long-lived JavaScript component to TypeScript surfaced two real bugs that had been shipping silently — one from a mistyped callback name, one from a referential-identity loop introduced by the refactor itself."
+tags: ["typescript", "react", "refactoring"]
+---
+
+import ExcessPropertyDemo from './ExcessPropertyDemo.tsx';
+import NarrowingGuardDemo from './NarrowingGuardDemo.tsx';
+import RerenderLoopDemo from './RerenderLoopDemo.tsx';
+import VerificationChecklistDemo from './VerificationChecklistDemo.tsx';
+
+A few-hundred-line JavaScript component — a role-assignment modal with a search box, a confirmation step, and a couple of API calls — needed to become TypeScript. The mechanical part of that conversion is usually uneventful: add types, satisfy the compiler, move on. This one turned up two real bugs that had been quietly shipping in production, plus a useful reminder about what static checks do and don’t cover.
+
+None of the bugs were exotic. They were the kind that hide in plain JavaScript because nothing checks an object literal’s shape against what the receiving function actually reads.
+
+---
+
+## 1. An excess-property check catches a callback typo
+
+The modal showed a confirmation dialog before a destructive action, built from a small internal library. Its signature looked like this once typed:
+
+```ts
+function showDialog(options: {
+  title: string
+  content: string
+  onConfirm?: () => void
+  onCancel?: () => void
+}): void
+```
+
+The call site — still plain JavaScript at the time — passed:
+
+```js
+showDialog({
+  title: "Two-step verification requirement",
+  content: "This will sign the user out. Continue?",
+  confirm: () => proceed(), // <- not a typo a person would catch by reading it
+})
+```
+
+`confirm` instead of `onConfirm`. In JavaScript, passing an object with an extra, unrecognized key is completely silent — the function destructures the keys it knows about and ignores the rest. Clicking the confirm button in the dialog did nothing, because nothing ever called `confirm`. The dialog just closed. No error, no log line, nothing in a stack trace to follow.
+
+Converting the call site to TypeScript turned this into a compile error on the first pass:
+
+```text
+Object literal may only specify known properties, but 'confirm'
+does not exist in type '...'. Did you mean to write 'onConfirm'?
+```
+
+This is TypeScript’s excess-property check, and it only fires on object *literals* passed directly as arguments — not on variables that happen to have extra properties. That’s a deliberate, narrow rule: literals are assumed to be intentional and complete, so anything not declared on the target type is treated as a mistake worth flagging. A variable could carry extra properties without complaint, because there’s no way to know whether that was on purpose. A literal typed inline at a call site almost never is.
+
+<ExcessPropertyDemo client:load />
+
+The fix was a one-word rename. The interesting part is what it reveals: a callback-shaped configuration object is a common pattern — confirmation dialogs, event handlers, options bags — and it’s exactly the shape where a typo in a key name is both easy to make and invisible at runtime. Plain JavaScript will never catch this category of bug. A type definition for the receiving function will, the moment the literal is built.
+
+---
+
+## 2. Equality alone doesn’t narrow a union when only one side has a literal type
+
+The search box in the modal rendered a list mixing two kinds of items: real records returned from an API, and a single synthetic “create new” entry appended to the end of the list. Both had an `id` field, but with very different types:
+
+```ts
+type ApiRecord = { id: string; name: string; email: string }
+type CreateNewOption = { id: "createNew"; query: string }
+type ListItem = ApiRecord | CreateNewOption
+```
+
+The selection handler checked which kind of item was clicked the obvious way:
+
+```ts
+function handleSelect(item: ListItem) {
+  if (item.id === "createNew") {
+    // expected: item narrowed to CreateNewOption here
+    openCreateForm(item.query) // compile error
+  } else {
+    // expected: item narrowed to ApiRecord here
+    saveExisting(item.email) // compile error
+  }
+}
+```
+
+Both branches fail to compile. The reason takes a second look: `CreateNewOption.id` is the literal type `"createNew"`, but `ApiRecord.id` is the plain, wide type `string`. A real API record’s `id` could theoretically equal the string `"createNew"` as far as the type system is concerned — nothing rules it out — so checking `item.id === "createNew"` doesn’t let TypeScript exclude `ApiRecord` from either branch. Narrowing by equality only works cleanly when *every* member of the union has a literal type for the field being compared. One wide type in the mix breaks it for the whole union.
+
+<NarrowingGuardDemo client:load />
+
+The fix is an explicit type predicate — a function whose return type tells the compiler exactly how to narrow, instead of asking it to infer that from an equality check:
+
+```ts
+function isCreateNewOption(item: ListItem): item is CreateNewOption {
+  return item.id === "createNew"
+}
+
+function handleSelect(item: ListItem) {
+  if (isCreateNewOption(item)) {
+    openCreateForm(item.query) // ✓ narrowed to CreateNewOption
+  } else {
+    saveExisting(item.email) // ✓ narrowed to ApiRecord
+  }
+}
+```
+
+The runtime check inside the function is identical to the inline equality check that didn’t work. The difference is entirely in the function’s declared return type — `item is CreateNewOption` is a promise to the compiler, and the compiler trusts it. This pattern is worth reaching for any time a union mixes a synthetic placeholder value with records that share a field name but not a field type.
+
+---
+
+## 3. Refactoring two components into one can break a stability guarantee nobody wrote down
+
+The third bug was the most interesting, because it wasn’t in the original code at all — it was introduced by the conversion.
+
+The original JavaScript split the search box into two components: a thin wrapper that owned the typed query, and a child that owned the fetched results and ran the actual search effect, fed a filter object built fresh on every render:
+
+```js
+function SearchBox({ type }) {
+  const [query, setQuery] = useState("")
+  return <SearchResults query={query} where={{ [`${type}_administrator`]: false }} />
+}
+```
+
+That filter object, built fresh from the `type` prop on every call, is a new object reference each time `SearchBox` renders. That’s normally a problem if it’s used as an effect dependency. Here it wasn’t, by accident: `SearchResults` held its *own* fetch-result state in a separate component, so updates to that state re-rendered `SearchResults`, not `SearchBox`. The filter object’s identity stayed put unless `SearchBox` itself re-rendered, which only happened when the query actually changed — exactly when a new search was wanted anyway.
+
+The conversion merged the two components into one, replacing the child with a hook:
+
+```ts
+function useSearch(query: string, where: Record<string, boolean>) {
+  const [results, setResults] = useState([])
+  useEffect(() => {
+    fetchResults(query, where).then(setResults)
+  }, [query, where])
+  return results
+}
+
+function SearchBox({ type }: { type: string }) {
+  const [query, setQuery] = useState("")
+  const where = { [`${type}_administrator`]: false } // new object, every render
+  const results = useSearch(query, where)
+  // ...
+}
+```
+
+This looks like the same code, restructured. It isn’t. `useSearch`’s internal `setResults` call now triggers a re-render of `SearchBox` itself, because the state and the object-literal construction live in the same component. Every results update rebuilds `where` with a new identity, which the effect’s dependency array sees as a change, which reruns the fetch, which updates `results` again — forever. Live in a browser tab, this showed up as a wall of failed requests and `ERR_INSUFFICIENT_RESOURCES` within a second of typing a single character.
+
+<RerenderLoopDemo client:load />
+
+The fix is a one-line `useMemo`, stabilizing the object on the value it actually depends on:
+
+```ts
+const where = useMemo(() => ({ [`${type}_administrator`]: false }), [type])
+```
+
+The lesson isn’t “memoize every object.” It’s that collapsing two components into one can quietly delete a stability guarantee that was never written down anywhere — it existed only as a side effect of which component happened to own which state. Nothing about the merged version is wrong in isolation; the bug only exists in the interaction between the object literal and the relocated state.
+
+---
+
+## 4. Green types and green tests are not the same as running it
+
+Both of the bugs above were specific to this code. The general lesson is more boring and more useful: linting, type-checking, and the test suite all passed clean while the infinite loop was live. None of them caught it, because none of them rendered the component, typed into the search box, and watched what happened to the network tab over time.
+
+<VerificationChecklistDemo client:load />
+
+Type-checking proves the shapes line up. Tests prove the units behave as written. Neither one simulates a user typing into a box while a component re-renders for unrelated reasons. That gap is exactly where this bug lived, and it only closed once a real browser tab ran the real code.
+
+---
+
+## The pattern across all four
+
+Every bug above was already possible in the original JavaScript, or introduced by a refactor that looked purely mechanical. None needed a new dependency, a different framework, or even a different shape of code — `confirm` versus `onConfirm` is one character; the union narrowing problem is solved with a single small function; the rerender loop is solved with `useMemo` and no other structural change. The value of the conversion wasn’t the types themselves. It was that the types forced a second, slower read of code that had been treated as settled — and that pass is where the actual bugs were.
