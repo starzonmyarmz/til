@@ -1,0 +1,179 @@
+---
+title: "Building a spinning CSS atom turned up five transform gotchas"
+date: 2026-07-01
+description: "A small CSS-only orbiting-electron animation broke an unrelated scroll animation, collapsed three rings into one, and lost a box through the floor — each failure traces back to a specific, generalizable rule about how CSS keyframes, transforms, and 3D compositing actually work."
+tags: ["css", "animation", "3d"]
+---
+
+import KeyframeCollisionDemo from './KeyframeCollisionDemo.tsx';
+import SiblingIndexDemo from './SiblingIndexDemo.tsx';
+import RotateOrderDemo from './RotateOrderDemo.tsx';
+import Preserve3dDemo from './Preserve3dDemo.tsx';
+import TranslateVsTransformDemo from './TranslateVsTransformDemo.tsx';
+
+A small decorative scene — a room rendered entirely in CSS 3D transforms, with an orbiting-electron “atom” hovering in the middle as a placeholder object — turned into a tour of five separate ways CSS transforms and animations can fail in ways that look like something else entirely. None of the bugs threw an error. Each one just quietly did the wrong thing, and the fix in every case came down to a narrow, specific rule about how the cascade or the 3D rendering model actually works.
+
+---
+
+## 1. Keyframe names are global, and the last one declared wins
+
+The scene already had a scroll-driven camera: a wrapping element rotated around its vertical axis as the page scrolled, using a `@keyframes orbit` rule tied to a scroll timeline.
+
+```css
+/* first stylesheet, loaded early */
+.turntable {
+  animation: orbit linear both;
+  animation-timeline: scroll(root block);
+}
+
+@keyframes orbit {
+  to {
+    --orbit: 360deg;
+  }
+}
+```
+
+Later, a second, unrelated animation was added for the electrons — and it was also named `orbit`, because “orbit” is the obvious name for a thing that goes in a circle:
+
+```css
+/* second stylesheet, loaded later, in the same document */
+.electron {
+  animation: orbit 2s linear infinite;
+  offset-path: circle(60px at 50% 50%);
+}
+
+@keyframes orbit {
+  to {
+    offset-distance: 100%;
+  }
+}
+```
+
+Scrolling stopped rotating the camera. No console error, no warning — the scroll-driven animation was still running, its timeline was still updating, but the camera just sat still.
+
+The cause: `@keyframes` names live in one global namespace per document, not scoped to the stylesheet or selector that uses them. When two `@keyframes` rules share a name, the *last one declared in the document* wins for every element that references that name, regardless of which file declared which. The turntable’s `animation: orbit` kept running — but it was now playing the electron’s keyframes, which only ever touch `offset-distance`, a property the turntable doesn’t use. The animation had a value to interpolate; it just wasn’t a value that did anything visible.
+
+The demo below reproduces this with a single stylesheet: toggle “same name” and watch one element’s animation silently swap definitions when a second `@keyframes` block bearing the same name is declared after it, purely because of what comes later in the source.
+
+<KeyframeCollisionDemo client:load />
+
+The fix is boring on purpose: rename one of them. There’s no scoping mechanism that saves this automatically — `@scope` scopes selectors, not keyframe names, and native CSS has no module system. The practical habit that prevents it: prefix keyframe names with the component they belong to (`electron-orbit`, not `orbit`), the same instinct that prevents class-name collisions in a codebase with no CSS Modules.
+
+---
+
+## 2. `sibling-index()` and `sibling-count()` replace a whole class of `:nth-child` math
+
+The atom needed three rings of electrons, each electron evenly spaced around its ring, and the spacing needed to keep working no matter how many electrons a ring had. The first pass hardcoded it:
+
+```css
+.electron:nth-child(2) {
+  animation-delay: -1s;
+}
+```
+
+That’s fine for exactly two electrons on a 2-second loop. Add a third, and the delay math has to be re-derived and every rule rewritten by hand. This is a common shape of CSS debt: a formula that only happens to look like a rule because there were only two things to space out.
+
+Two newly-shipped CSS functions remove the hand math entirely: [`sibling-index()`](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Values/sibling-index) returns an element’s 1-based position among its siblings, and [`sibling-count()`](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Values/sibling-count) returns the total sibling count — both as plain `<integer>` values usable inside `calc()`:
+
+```css
+.electron {
+  animation: electron-orbit 2s linear infinite;
+  animation-delay: calc(-2s / sibling-count() * (sibling-index() - 1));
+}
+```
+
+Add a fourth electron to the markup and every delay recalculates on its own — no rule to touch. The same formula, with `rotateZ` in place of `animation-delay`, spaces the three rings evenly around a shared axis. The markup becomes just “however many copies,” and the spacing is a property of the group, not something authored per element.
+
+The demo below recreates the effect with equivalent JavaScript math (these functions shipped in Chrome 138 and Safari 26.2, not yet in Firefox, so a live demo can’t rely on them rendering everywhere) — toggle between hardcoded spacing and formula-driven spacing, then change the count.
+
+<SiblingIndexDemo client:load />
+
+Watch what happens to the hardcoded version when the count slider moves: the spacing that was tuned for one count doesn’t redistribute, so items pile up or leave gaps. The formula-driven version redistributes every time, because it never encoded a specific count in the first place.
+
+---
+
+## 3. Rotating a circle before flattening it does nothing — order inside `transform` matters
+
+With electrons orbiting correctly, the three rings needed to visually cross each other, Bohr-model style. Each ring got a tilt (to turn the flat circular orbit into a foreshortened ellipse) and a rotation (to spread the three rings apart):
+
+```css
+.ring {
+  transform: rotateX(65deg) rotateZ(calc(360deg / sibling-count() * (sibling-index() - 1)));
+}
+```
+
+All three rings rendered as the exact same ellipse, stacked on top of each other. Adding more electrons per ring made this obvious — fifteen dots traced one ellipse, not three.
+
+`transform` functions compose right to left: the rightmost function applies first, to the element’s original, untransformed shape. Here, `rotateZ` ran first, spinning a perfect circle around its own center — and a circle is rotationally symmetric, so spinning it by any angle produces an identical circle. `rotateX` then tilted that (unchanged) circle into an ellipse. Every ring went through the identical sequence: no-op rotation, then the same tilt. Three identical ellipses.
+
+The fix is to reverse the order, so the rotation applies *after* the tilt, to the now-elliptical (asymmetric) shape:
+
+```css
+.ring {
+  transform: rotateY(calc(360deg / sibling-count() * (sibling-index() - 1))) rotateX(25deg);
+}
+```
+
+An ellipse is not rotationally symmetric, so rotating it by a different amount per ring genuinely produces a different shape each time. (The axis changed too, from `rotateZ` to `rotateY` — spinning the tilted plane around the vertical axis, rather than around the viewing axis, which is what actually separates the rings when a perspective camera is involved. But the axis swap only matters *because* the ordering was fixed first; the ordering bug alone would sink either axis choice.)
+
+The 2D demo below makes the same point without needing a 3D scene: `scaleY()` standing in for the tilt, `rotate()` for the spread. Toggle the order and watch three shapes either collapse onto one flattened line or fan out distinctly.
+
+<RotateOrderDemo client:load />
+
+The general rule: before reaching for more transform functions, check whether an earlier one in the list is *symmetric* under whatever a later one does. A rotation before a uniform scale is fine. A rotation before an operation that erases the very asymmetry the rotation was trying to introduce is a silent no-op.
+
+---
+
+## 4. `transform-style: preserve-3d` has to be unbroken all the way down the chain
+
+The electrons needed to tumble — rotate on their own X and Y axes independently of their orbital motion. That meant nesting a spinning box inside the already-orbiting wrapper, and adding `transform-style: preserve-3d` to the wrapper so the nested 3D rotation would actually render as 3D instead of getting flattened into the wrapper’s own flat plane.
+
+The moment `preserve-3d` was added, the box shot down through the floor.
+
+It turned out the box had carried a large, silent `translateZ` offset the entire time — inherited from styling meant for boxes placed directly inside the room, which recenters an object using the room’s full depth (`calc(var(--l) / 2 - var(--room-l) / 2 + var(--z))`). Nested several levels deep inside the orbit wrapper instead, that same recentering math still ran, pushing the box roughly half the room’s depth away on the Z axis.
+
+That offset had been there the whole time. It was invisible because the wrapper it lived inside didn’t have `transform-style: preserve-3d` — so the browser flattened the box’s entire 3D transform into a 2D projection before rendering it, silently discarding the depth component along with the bug it was hiding. Adding `preserve-3d` didn’t introduce the bug. It just stopped masking it.
+
+This is the general shape of the trap: `preserve-3d` isn’t a per-element toggle for “look 3D” — it has to be present on *every* ancestor in the chain for a nested 3D transform to render as intended. A single ancestor without it collapses everything below into a flat plane, discarding any Z-axis transforms on unstyled or forgotten descendants along the way. That flattening isn’t always a problem — sometimes it’s exactly what’s wanted — but it means a stray `translateZ` two levels down can sit completely inert and untested until something upstream changes the render mode, at which point it fires all at once.
+
+The demo below builds a small three-level chain with a `translateZ` push buried in the innermost element, and a toggle for `preserve-3d` on the middle element. With it off, the push has no visible effect at all. With it on, the same CSS suddenly matters.
+
+<Preserve3dDemo client:load />
+
+The fix here was to explicitly cancel the inherited placement math for boxes used this way (`translate: none`), rather than working around it by leaving a hole in the `preserve-3d` chain.
+
+---
+
+## 5. `translate` and `rotate` are separate properties from `transform` — and that’s the point
+
+The tumbling animation needed to spin a box that was *also* being positioned by a `translate` declaration (from the room-placement styling in the point above). Naively, this looks like a job for `transform: rotateX() rotateY()` layered onto whatever positioning already existed — except `transform` is a single property, and a CSS animation that sets `transform: rotateX(360deg) rotateY(360deg)` in its keyframes doesn’t add rotation to whatever transform value happens to already be applied; it *replaces* the property outright for the duration of the animation.
+
+If the box’s position had been expressed as `transform: translateX(...)`, the spin animation would have clobbered it, snapping the box back to its untranslated position the instant the animation started.
+
+```css
+.box {
+  translate: 0 0 calc(var(--l) / 2 - var(--room-l) / 2 + var(--z));
+}
+
+.box {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotateX(360deg) rotateY(360deg);
+  }
+}
+```
+
+This works cleanly because `translate`, `rotate`, `scale`, and `transform` are four independent CSS properties as of the CSS Transforms Level 2 spec, not one property with four kinds of function. They compose in a fixed order — translate, then rotate, then scale, then `transform` — and, critically, animating one of them never touches the others. Positioning logic and spin logic can live in entirely separate rules, written and animated independently, without either one needing to know the current value of the other.
+
+The demo below puts a slider-driven position next to a continuous spin, once with both crammed into a single animated `transform`, and once with position on `translate` and spin on `transform` separately.
+
+<TranslateVsTransformDemo client:load />
+
+The version using a single `transform` loses its position the moment the spin animation is running, because the keyframes only ever specify a rotation — there’s no value for the translation component to fall back to. The split-property version keeps both working simultaneously, because neither declaration has any way to overwrite the other.
+
+---
+
+None of these five bugs were about writing invalid CSS — everything here is valid, and none of it warns or errors. Each one is a case where CSS did exactly what the spec says, and the spec’s answer wasn’t the intuitive one: keyframe names are global, transform function order matters because most transforms aren’t symmetric, 3D flattening is opt-in per ancestor, and the split between `translate`/`rotate`/`transform` exists specifically so unrelated animations don’t have to renegotiate each other’s state. Once each rule is named, the failures stop looking like typos and start looking like the direct, predictable consequence of a rule that was easy not to know.
