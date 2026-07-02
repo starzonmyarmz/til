@@ -56,7 +56,7 @@ function handleFieldChange({ name }: { name: FormFieldName }) {
 
 **What to notice:** when the type of `name` matches the type of the object's keys, indexing Just Works. The cast was a smell pointing at the real fix.
 
-<EnumKeys client:load />
+<EnumKeys client:visible />
 
 ## `Object.fromEntries` beats `reduce` here
 
@@ -77,7 +77,7 @@ const initialFields = Object.fromEntries(
 
 **What to notice:** the intent is literally "pair each name with its value, then make an object." `fromEntries` says that; `reduce` hides it.
 
-<FromEntries client:load />
+<FromEntries client:visible />
 
 ## Generic `useState` over a cast
 
@@ -110,13 +110,13 @@ function errorProps(field: FormFieldName) {
 
 **What to notice:** the helper captures a *mapping* — field name to display props — not a generic abstraction. One source of truth for how an error shows.
 
-<HelperSpread client:load />
+<HelperSpread client:visible />
 
 ## Optional chaining + nullish coalescing
 
 Tighter types still leave room for "no error for this field yet." `error?.join(", ")` returns `undefined` if `error` is missing. `Boolean(error)` turns that into a clean `true`/`false`. And for values that might be `undefined`, `?? ""` gives a safe default.
 
-<OptionalChaining client:load />
+<OptionalChaining client:visible />
 
 ## Where to go next
 

@@ -64,7 +64,7 @@ export default function PayoutReports({ ... }) { ... }
 
 Module scope, top of file, built exactly once for the lifetime of the page. Every row of the transaction table reuses the same instance. The same applies to `Intl.DateTimeFormat`, `Intl.Collator`, `Intl.PluralRules` — any of the `Intl.*` constructors.
 
-<FormatterScopeDemo client:load />
+<FormatterScopeDemo client:visible />
 
 The numbers vary by machine and browser, but the ratio rarely surprises anyone — re-constructing the formatter inside the loop costs an order of magnitude or two more than reusing the hoisted instance. A two-hundred-row payouts table calling `new Intl.NumberFormat()` for every cell would have spent more time configuring formatters than rendering DOM. None of that effort is visible in a code review — which is exactly why the habit needs to be the default.
 
@@ -103,7 +103,7 @@ const dateFormatter = new Intl.DateTimeFormat('en-US')
 
 `new Date(string)` is one of the rare places where `Date` parsing is actually well-defined: ISO 8601 with an offset is required by the spec. Locale-formatted strings, ambiguous two-digit years, and the bare-date form `"2026-03-05"` — which is parsed as UTC midnight, then displayed in local time, which has tripped every team that ever wrote a calendar — are the failure modes the ISO format dodges.
 
-<DateDemo client:load />
+<DateDemo client:visible />
 
 The same instant rendered into four locales. Notice that the parsed value never changes — it is a fixed point in time. Only the formatter output changes. That is the whole separation: time is a number, display is a render concern, and the wire format is the contract between them.
 

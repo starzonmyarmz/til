@@ -124,7 +124,7 @@ The browser will not start an `AudioContext` until a user gesture, so the first 
 
 The demo below builds three of those effects directly in the browser. Each button triggers a node graph and disposes of it when the sound finishes.
 
-<GardenAudioDemo client:load />
+<GardenAudioDemo client:visible />
 
 A note on cost: noise generation through `createBuffer` and filling its sample array is fine for short bursts but allocates memory every play. For a frequently fired effect, prefer an oscillator-based approximation, or pre-render the buffer once at startup and reuse the same `AudioBufferSourceNode` source clone.
 
@@ -155,7 +155,7 @@ There is no state enum, no transition table, no FSM library. The behaviour emerg
 
 The depollination step is what closes the loop. When a flower is hit by a bee, it scales up and the score increments. When a dog reaches it, the same flower scales back down, the score decrements, and the dog's pee timer resets — meaning a different dog with a different countdown might lock onto a different pollinated flower next.
 
-<DogStateMachineDemo client:load />
+<DogStateMachineDemo client:visible />
 
 The visualisation above is a faithful port of the dog AI. The same checks, the same priorities. The dog dot finds the nearest filled flower, walks to it, marks it back to empty, and ticks down its cooldown. Reset and watch the timing emerge.
 

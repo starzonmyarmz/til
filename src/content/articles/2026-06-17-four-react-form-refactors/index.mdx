@@ -107,7 +107,7 @@ const apiErrorText = (property) => {
 
 There's a second benefit: `apiErrorText` had a near-identical sibling (`apiErrorMessage`) that returned JSX instead of a string. Once both helpers drew from the same Map, the JSX version turned out to be redundant — its only caller wanted a string after all. Deduplication followed naturally.
 
-<ErrorMapDemo client:load />
+<ErrorMapDemo client:visible />
 
 ---
 
@@ -163,7 +163,7 @@ const onDeleteCampus = () => {
 
 Notice the early-return structure replaced the `if / else if / else` chain. Each condition returns immediately; the final `return` covers the default. Easier to scan and no nesting.
 
-<HoistDemo client:load />
+<HoistDemo client:visible />
 
 ---
 
@@ -202,7 +202,7 @@ updateField("typo", "value")              // ✗ Argument of type '"typo"' not a
 
 The pattern shows up any time a helper takes a key and a value together. It's especially useful on `updateField`-style helpers, `pick`/`omit` utilities, and any function that reads or writes by dynamic key.
 
-<UpdateFieldDemo client:load />
+<UpdateFieldDemo client:visible />
 
 ---
 

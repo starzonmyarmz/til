@@ -82,7 +82,7 @@ function handleSelect(item: ListItem) {
 
 Both branches fail to compile. The reason takes a second look: `CreateNewOption.id` is the literal type `"createNew"`, but `ApiRecord.id` is the plain, wide type `string`. A real API record’s `id` could theoretically equal the string `"createNew"` as far as the type system is concerned — nothing rules it out — so checking `item.id === "createNew"` doesn’t let TypeScript exclude `ApiRecord` from either branch. Narrowing by equality only works cleanly when *every* member of the union has a literal type for the field being compared. One wide type in the mix breaks it for the whole union.
 
-<NarrowingGuardDemo client:load />
+<NarrowingGuardDemo client:visible />
 
 The fix is an explicit type predicate — a function whose return type tells the compiler exactly how to narrow, instead of asking it to infer that from an equality check:
 
@@ -140,7 +140,7 @@ function SearchBox({ type }: { type: string }) {
 
 This looks like the same code, restructured. It isn’t. `useSearch`’s internal `setResults` call now triggers a re-render of `SearchBox` itself, because the state and the object-literal construction live in the same component. Every results update rebuilds `where` with a new identity, which the effect’s dependency array sees as a change, which reruns the fetch, which updates `results` again — forever. Live in a browser tab, this showed up as a wall of failed requests and `ERR_INSUFFICIENT_RESOURCES` within a second of typing a single character.
 
-<RerenderLoopDemo client:load />
+<RerenderLoopDemo client:visible />
 
 The fix is a one-line `useMemo`, stabilizing the object on the value it actually depends on:
 
@@ -156,7 +156,7 @@ The lesson isn’t “memoize every object.” It’s that collapsing two compon
 
 Both of the bugs above were specific to this code. The general lesson is more boring and more useful: linting, type-checking, and the test suite all passed clean while the infinite loop was live. None of them caught it, because none of them rendered the component, typed into the search box, and watched what happened to the network tab over time.
 
-<VerificationChecklistDemo client:load />
+<VerificationChecklistDemo client:visible />
 
 Type-checking proves the shapes line up. Tests prove the units behave as written. Neither one simulates a user typing into a box while a component re-renders for unrelated reasons. That gap is exactly where this bug lived, and it only closed once a real browser tab ran the real code.
 

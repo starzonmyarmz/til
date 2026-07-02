@@ -86,7 +86,7 @@ const handleBackdropClick = (e: React.MouseEvent<HTMLDialogElement>) => {
 }
 ```
 
-<BackdropClickDemo client:load />
+<BackdropClickDemo client:visible />
 
 What to notice: the children inside the dialog stop the event from being attributed to the dialog itself, because event targets are always the deepest element. Clicking on text, a button, an input — anything — sets the target to that node. Only a click on the actual backdrop strip leaves the dialog as the target.
 
@@ -96,7 +96,7 @@ A subtle consequence: if the dialog has no padding or its content fills the enti
 
 All three close paths route through the same `onClose`. The parent owns the boolean. The dialog owns nothing.
 
-<DialogDemo client:load />
+<DialogDemo client:visible />
 
 The wrapper component is short enough to fit in a single file. Header, body, and actions are separate components mostly for class-name hygiene — `dialog__header`, `dialog__body`, `dialog__actions` map cleanly to BEM-style CSS and keep the wrapper from caring about layout.
 

@@ -86,7 +86,7 @@ Add a fourth electron to the markup and every delay recalculates on its own — 
 
 The demo below recreates the effect with equivalent JavaScript math (these functions shipped in Chrome 138 and Safari 26.2, not yet in Firefox, so a live demo can’t rely on them rendering everywhere) — toggle between hardcoded spacing and formula-driven spacing, then change the count.
 
-<SiblingIndexDemo client:load />
+<SiblingIndexDemo client:visible />
 
 Watch what happens to the hardcoded version when the count slider moves: the spacing that was tuned for one count doesn’t redistribute, so items pile up or leave gaps. The formula-driven version redistributes every time, because it never encoded a specific count in the first place.
 
@@ -118,7 +118,7 @@ An ellipse is not rotationally symmetric, so rotating it by a different amount p
 
 The 2D demo below makes the same point without needing a 3D scene: `scaleY()` standing in for the tilt, `rotate()` for the spread. Toggle the order and watch three shapes either collapse onto one flattened line or fan out distinctly.
 
-<RotateOrderDemo client:load />
+<RotateOrderDemo client:visible />
 
 The general rule: before reaching for more transform functions, check whether an earlier one in the list is *symmetric* under whatever a later one does. A rotation before a uniform scale is fine. A rotation before an operation that erases the very asymmetry the rotation was trying to introduce is a silent no-op.
 
@@ -138,7 +138,7 @@ This is the general shape of the trap: `preserve-3d` isn’t a per-element toggl
 
 The demo below builds a small three-level chain with a `translateZ` push buried in the innermost element, and a toggle for `preserve-3d` on the middle element. With it off, the push has no visible effect at all. With it on, the same CSS suddenly matters.
 
-<Preserve3dDemo client:load />
+<Preserve3dDemo client:visible />
 
 The fix here was to explicitly cancel the inherited placement math for boxes used this way (`translate: none`), rather than working around it by leaving a hole in the `preserve-3d` chain.
 
@@ -170,7 +170,7 @@ This works cleanly because `translate`, `rotate`, `scale`, and `transform` are f
 
 The demo below puts a slider-driven position next to a continuous spin, once with both crammed into a single animated `transform`, and once with position on `translate` and spin on `transform` separately.
 
-<TranslateVsTransformDemo client:load />
+<TranslateVsTransformDemo client:visible />
 
 The version using a single `transform` loses its position the moment the spin animation is running, because the keyframes only ever specify a rotation — there’s no value for the translation component to fall back to. The split-property version keeps both working simultaneously, because neither declaration has any way to overwrite the other.
 

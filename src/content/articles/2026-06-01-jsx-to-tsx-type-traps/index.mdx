@@ -79,7 +79,7 @@ What to notice: the initial value is still `null` and `[]`. Nothing about the ru
 
 import NullStateDemo from './NullStateDemo.tsx';
 
-<NullStateDemo client:load />
+<NullStateDemo client:visible />
 
 A useful habit falls out of this: any `useState` whose initial value is `null`, `undefined`, or `[]` almost always needs an explicit type argument, because the initial value is deliberately *not* representative of what the state becomes.
 
@@ -109,7 +109,7 @@ What to notice: `location.href` is typed as a plain `string`, so the assignment 
 
 import LocationSetterDemo from './LocationSetterDemo.tsx';
 
-<LocationSetterDemo client:load />
+<LocationSetterDemo client:visible />
 
 ## The JavaScript default that poisons every caller
 

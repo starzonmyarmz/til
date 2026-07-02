@@ -82,7 +82,7 @@ Adding `Accept: application/json` makes Rails' `respond_to` block pick the JSON 
 
 Async functions can call themselves through `setTimeout`. The next call kicks off a new promise; the original one has already resolved by the time `setTimeout` fires. No leaks, no chained-promise weirdness. The polling pattern survives the rewrite untouched.
 
-<PollingDemo client:load />
+<PollingDemo client:visible />
 
 The demo above runs the same shape — poll, update status, recurse via setTimeout — against a mock endpoint. The status ticks from `processing` to `complete`.
 
