@@ -1,26 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
-import { Demo, Toolbar, ToggleGroup, Button, Hint } from '../../../components/demo';
+import { useState } from 'react';
+import { Demo, Toolbar, ToggleGroup, Button, Hint, NativeDialog } from '../../../components/demo';
 
 type Mode = 'open' | 'showModal';
 
 export default function OpenVsShowModalDemo() {
   const [mode, setMode] = useState<Mode>('showModal');
   const [isOpen, setIsOpen] = useState(false);
-  const ref = useRef<HTMLDialogElement>(null);
-
-  useEffect(() => {
-    const dialog = ref.current;
-    if (!dialog) return;
-    if (!isOpen) {
-      if (dialog.open) dialog.close();
-      return;
-    }
-    if (mode === 'showModal') {
-      if (!dialog.open) dialog.showModal();
-    } else {
-      if (!dialog.open) dialog.setAttribute('open', '');
-    }
-  }, [isOpen, mode]);
 
   return (
     <Demo>
@@ -42,22 +27,12 @@ export default function OpenVsShowModalDemo() {
         </Button>
       </Toolbar>
 
-      <dialog
-        ref={ref}
-        onClick={(e) => {
-          if (e.target === ref.current) setIsOpen(false);
-        }}
-        onCancel={(e) => {
-          e.preventDefault();
-          setIsOpen(false);
-        }}
-        style={{
-          border: '1px solid var(--rule)',
-          borderRadius: 8,
-          padding: 16,
-          maxWidth: 320,
-          fontFamily: 'inherit',
-        }}
+      <NativeDialog
+        open={isOpen}
+        onOpenChange={setIsOpen}
+        onBackdropClick={() => setIsOpen(false)}
+        mode={mode}
+        padding={16}
       >
         <p style={{ margin: '0 0 8px' }}>
           Opened with <code style={{ fontFamily: 'var(--mono)' }}>{mode}</code>.
@@ -68,7 +43,7 @@ export default function OpenVsShowModalDemo() {
             : 'No backdrop. Esc ignored. Background still focusable.'}
         </p>
         <Button onClick={() => setIsOpen(false)}>Close</Button>
-      </dialog>
+      </NativeDialog>
 
       <Hint>
         The same element, two opening verbs. Only one of them is a modal in the sense that word

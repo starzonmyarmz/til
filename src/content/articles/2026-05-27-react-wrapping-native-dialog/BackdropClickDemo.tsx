@@ -1,29 +1,26 @@
-import { useEffect, useRef, useState } from 'react';
-import { Demo, Toolbar, Button, Console, Hint, type ConsoleLine } from '../../../components/demo';
+import { useState } from 'react';
+import {
+  Demo,
+  Toolbar,
+  Button,
+  Console,
+  Hint,
+  NativeDialog,
+  useConsoleLog,
+} from '../../../components/demo';
 
 export default function BackdropClickDemo() {
   const [isOpen, setIsOpen] = useState(false);
-  const [log, setLog] = useState<ConsoleLine[]>([]);
-  const ref = useRef<HTMLDialogElement>(null);
+  const { lines, push } = useConsoleLog(6);
 
-  const append = (line: string, tone: ConsoleLine['tone'] = 'info') =>
-    setLog((prev) => [...prev.slice(-5), { line, tone }]);
-
-  useEffect(() => {
-    const dialog = ref.current;
-    if (!dialog) return;
-    if (isOpen && !dialog.open) dialog.showModal();
-    else if (!isOpen && dialog.open) dialog.close();
-  }, [isOpen]);
-
-  const handleClick = (e: React.MouseEvent<HTMLDialogElement>) => {
+  const handleContentClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement;
-    const isBackdrop = target === ref.current;
-    append(
-      `click target: <${target.tagName.toLowerCase()}> · ${isBackdrop ? 'backdrop' : 'inside content'}`,
-      isBackdrop ? 'good' : 'warn'
-    );
-    if (isBackdrop) setIsOpen(false);
+    push(`click target: <${target.tagName.toLowerCase()}> · inside content`, 'warn');
+  };
+
+  const handleBackdropClick = () => {
+    push('click target: <dialog> · backdrop', 'good');
+    setIsOpen(false);
   };
 
   return (
@@ -34,35 +31,23 @@ export default function BackdropClickDemo() {
         </Button>
       </Toolbar>
 
-      <dialog
-        ref={ref}
-        onClick={handleClick}
-        onCancel={(e) => {
-          e.preventDefault();
-          setIsOpen(false);
-        }}
-        style={{
-          border: '1px solid var(--rule)',
-          borderRadius: 8,
-          padding: 24,
-          maxWidth: 320,
-          fontFamily: 'inherit',
-        }}
-      >
-        <p style={{ margin: '0 0 12px' }}>Click anywhere — inside the box or on the backdrop.</p>
-        <input
-          type="text"
-          defaultValue="click me"
-          style={{
-            font: 'inherit',
-            padding: '4px 6px',
-            border: '1px solid var(--rule)',
-            borderRadius: 4,
-          }}
-        />
-      </dialog>
+      <NativeDialog open={isOpen} onOpenChange={setIsOpen} onBackdropClick={handleBackdropClick}>
+        <div onClick={handleContentClick}>
+          <p style={{ margin: '0 0 12px' }}>Click anywhere — inside the box or on the backdrop.</p>
+          <input
+            type="text"
+            defaultValue="click me"
+            style={{
+              font: 'inherit',
+              padding: '4px 6px',
+              border: '1px solid var(--rule)',
+              borderRadius: 4,
+            }}
+          />
+        </div>
+      </NativeDialog>
 
-      <Console lines={log} placeholder="Open the dialog, then click around" />
+      <Console lines={lines} placeholder="Open the dialog, then click around" />
 
       <Hint>
         Notice that clicking the input, the text, or any other child reports a different target

@@ -6,6 +6,7 @@ import {
   Button,
   ToggleGroup,
   Console,
+  useConsoleLog,
 } from "../../../components/demo";
 import type { ConsoleLine } from "../../../components/demo";
 
@@ -17,7 +18,7 @@ function showDialog(options: { onConfirm?: () => void }) {
 
 export default function ExcessPropertyDemo() {
   const [config, setConfig] = useState<Config>("wrong");
-  const [lines, setLines] = useState<ConsoleLine[]>([]);
+  const { lines, push, reset } = useConsoleLog();
 
   const diagnostic: ConsoleLine =
     config === "wrong"
@@ -34,15 +35,12 @@ export default function ExcessPropertyDemo() {
         ? { confirm: () => (fired = true) }
         : { onConfirm: () => (fired = true) };
     showDialog(options);
-    setLines((prev) => [
-      ...prev,
+    push(
       fired
-        ? { line: "onConfirm fired -- action confirmed", tone: "good" }
-        : {
-            line: "nothing happened -- showDialog only reads onConfirm",
-            tone: "bad",
-          },
-    ]);
+        ? "onConfirm fired -- action confirmed"
+        : "nothing happened -- showDialog only reads onConfirm",
+      fired ? "good" : "bad",
+    );
   }
 
   return (
@@ -52,7 +50,7 @@ export default function ExcessPropertyDemo() {
           value={config}
           onChange={(next) => {
             setConfig(next);
-            setLines([]);
+            reset();
           }}
           options={[
             { value: "wrong", label: "confirm: () => ..." },

@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
+import { Demo, Panel, Select } from '../../../components/demo';
 
 type ValueType = 'string' | 'boolean';
+type BoolString = 'true' | 'false';
 
 const STRING_OPTIONS = [
   { label: 'true', value: 'true' },
@@ -27,44 +29,43 @@ export default function TypeMismatchDemo() {
   );
 
   return (
-    <div className="demo">
-      <div className="demo-label">Interactive · React</div>
+    <Demo>
       <div style={{ display: 'grid', gap: '0.6rem', marginBottom: '0.75rem' }}>
         <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
           <span style={{ minWidth: '8rem', color: 'var(--ink-soft)' }}>option value type</span>
-          <select value={optionType} onChange={(e) => setOptionType(e.target.value as ValueType)}>
-            <option value="string">string</option>
-            <option value="boolean">boolean</option>
-          </select>
+          <Select
+            value={optionType}
+            onChange={setOptionType}
+            options={[
+              { value: 'string', label: 'string' },
+              { value: 'boolean', label: 'boolean' },
+            ]}
+          />
         </label>
         <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
           <span style={{ minWidth: '8rem', color: 'var(--ink-soft)' }}>defaultValue type</span>
-          <select value={defaultType} onChange={(e) => setDefaultType(e.target.value as ValueType)}>
-            <option value="boolean">boolean</option>
-            <option value="string">string</option>
-          </select>
+          <Select
+            value={defaultType}
+            onChange={setDefaultType}
+            options={[
+              { value: 'boolean', label: 'boolean' },
+              { value: 'string', label: 'string' },
+            ]}
+          />
         </label>
         <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
           <span style={{ minWidth: '8rem', color: 'var(--ink-soft)' }}>defaultValue</span>
-          <select
-            value={String(defaultBool)}
-            onChange={(e) => setDefaultBool(e.target.value === 'true')}
-          >
-            <option value="true">true</option>
-            <option value="false">false</option>
-          </select>
+          <Select<BoolString>
+            value={String(defaultBool) as BoolString}
+            onChange={(v) => setDefaultBool(v === 'true')}
+            options={[
+              { value: 'true', label: 'true' },
+              { value: 'false', label: 'false' },
+            ]}
+          />
         </label>
       </div>
-      <div
-        style={{
-          fontFamily: 'var(--mono)',
-          fontSize: '0.95rem',
-          padding: '0.6rem 0.75rem',
-          border: '1px solid var(--rule)',
-          borderRadius: '4px',
-          background: 'transparent',
-        }}
-      >
+      <Panel>
         <div>
           <span style={{ color: 'var(--ink-soft)' }}>options:</span>{' '}
           {options.map((o) => `${JSON.stringify(o.value)}`).join(', ')}
@@ -81,7 +82,7 @@ export default function TypeMismatchDemo() {
             <span style={{ color: '#b94a48' }}>none — dropdown renders unselected</span>
           )}
         </div>
-      </div>
-    </div>
+      </Panel>
+    </Demo>
   );
 }

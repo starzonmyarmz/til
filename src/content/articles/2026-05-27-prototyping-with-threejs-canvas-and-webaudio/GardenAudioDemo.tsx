@@ -1,6 +1,5 @@
 import { useRef } from 'react';
-import { Demo, Toolbar, Button, Console, type ConsoleLine, Hint } from '../../../components/demo';
-import { useState } from 'react';
+import { Demo, Toolbar, Button, Console, type Tone, Hint, useConsoleLog } from '../../../components/demo';
 
 type AudioCtxLike = AudioContext & { state: AudioContextState };
 
@@ -102,14 +101,12 @@ function playChime(ctx: AudioContext) {
 
 export default function GardenAudioDemo() {
   const ctxRef = useRef<AudioCtxLike | null>(null);
-  const [lines, setLines] = useState<ConsoleLine[]>([]);
+  const { lines, push } = useConsoleLog(8);
 
-  function fire(name: string, fn: (ctx: AudioContext) => void, tone: ConsoleLine['tone']) {
+  function fire(name: string, fn: (ctx: AudioContext) => void, tone: Tone) {
     const ctx = getCtx(ctxRef);
     fn(ctx);
-    setLines((prev) =>
-      [...prev, { line: `${name} → ${ctx.state} · ${ctx.currentTime.toFixed(2)}s`, tone }].slice(-8),
-    );
+    push(`${name} → ${ctx.state} · ${ctx.currentTime.toFixed(2)}s`, tone);
   }
 
   return (

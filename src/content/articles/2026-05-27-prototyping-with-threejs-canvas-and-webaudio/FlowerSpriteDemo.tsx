@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Demo, Slider, Output, OutputRow, Hint } from '../../../components/demo';
+import { Demo, Slider, Output, OutputRow, Hint, CanvasStage } from '../../../components/demo';
 
 export default function FlowerSpriteDemo() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -55,20 +55,7 @@ export default function FlowerSpriteDemo() {
       <Slider label="hue" min={0} max={359} value={hue} onChange={setHue} />
       <Slider label="centre" min={4} max={18} value={centerSize} onChange={setCenterSize} />
 
-      <div style={{ display: 'flex', justifyContent: 'center', margin: '1rem 0' }}>
-        <canvas
-          ref={canvasRef}
-          width={128}
-          height={128}
-          style={{
-            width: 128,
-            height: 128,
-            imageRendering: 'pixelated',
-            background: 'transparent',
-            border: '1px solid var(--rule)',
-          }}
-        />
-      </div>
+      <CanvasStage canvasRef={canvasRef} width={128} height={128} background="transparent" />
 
       <Output>
         <OutputRow label="petal fill:">

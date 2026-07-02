@@ -4,6 +4,7 @@ import {
   Toolbar,
   Button,
   Console,
+  Select,
   type ConsoleLine,
 } from '../../../components/demo';
 
@@ -58,11 +59,15 @@ export default function ErrorPathsDemo() {
       <Toolbar>
         <label style={{ fontFamily: 'var(--mono)', fontSize: '0.9rem' }}>
           scenario:{' '}
-          <select value={scenario} onChange={(e) => setScenario(e.target.value as Scenario)}>
-            <option value="ok">200 OK</option>
-            <option value="http_500">500 Internal Server Error</option>
-            <option value="network">network failure</option>
-          </select>
+          <Select
+            value={scenario}
+            onChange={setScenario}
+            options={[
+              { value: 'ok', label: '200 OK' },
+              { value: 'http_500', label: '500 Internal Server Error' },
+              { value: 'network', label: 'network failure' },
+            ]}
+          />
         </label>
         <Button onClick={run} disabled={running}>
           {running ? 'running…' : 'run'}

@@ -5,10 +5,10 @@ import {
   ToggleGroup,
   Console,
   Hint,
+  useConsoleLog,
 } from "../../../components/demo";
 
 type Approach = "inline" | "hoisted";
-type ConsoleLine = { line: string; tone: "info" | "good" | "warn" | "bad" };
 
 // --- HOISTED version: defined once at module level ---
 const HoistedContent = ({ label }: { label: string }) => (
@@ -19,12 +19,9 @@ const HoistedContent = ({ label }: { label: string }) => (
 
 export default function HoistDemo() {
   const [approach, setApproach] = useState<Approach>("inline");
-  const [log, setLog] = useState<ConsoleLine[]>([]);
+  const { lines, push, reset } = useConsoleLog(10);
   const clickCount = useRef(0);
   const typeRefs = useRef<Set<unknown>>(new Set());
-
-  const addLine = (line: string, tone: ConsoleLine["tone"] = "info") =>
-    setLog((prev) => [...prev.slice(-9), { line, tone }]);
 
   const handleInlineClick = () => {
     clickCount.current += 1;
@@ -39,7 +36,7 @@ export default function HoistDemo() {
     const isNew = !typeRefs.current.has(InlineContent);
     typeRefs.current.add(InlineContent);
 
-    addLine(
+    push(
       `click #${clickCount.current}: component type is ${isNew ? "NEW (forced remount)" : "same"}`,
       isNew ? "bad" : "good",
     );
@@ -50,7 +47,7 @@ export default function HoistDemo() {
     const isNew = !typeRefs.current.has(HoistedContent);
     typeRefs.current.add(HoistedContent);
 
-    addLine(
+    push(
       `click #${clickCount.current}: component type is ${isNew ? "new (first mount)" : "SAME (stable ref ✓)"}`,
       isNew ? "info" : "good",
     );
@@ -59,7 +56,7 @@ export default function HoistDemo() {
   const handleReset = () => {
     clickCount.current = 0;
     typeRefs.current = new Set();
-    setLog([]);
+    reset();
   };
 
   return (
@@ -96,8 +93,8 @@ export default function HoistDemo() {
       </Toolbar>
       <Console
         lines={
-          log.length
-            ? log
+          lines.length
+            ? lines
             : [
                 {
                   line: 'click "Open dialog" to trace component identity',

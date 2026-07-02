@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Demo, ToggleGroup, Panel } from '../../../components/demo';
 
 type Mode = 'before' | 'after';
 
@@ -115,21 +116,13 @@ function View({
           <span style={{ color: 'hsl(140 50% 45%)' }}>✓ looks good</span>
         )}
       </div>
-      <div
-        style={{
-          padding: '0.6rem 0.75rem',
-          border: '1px solid var(--rule)',
-          borderRadius: '4px',
-          fontFamily: 'var(--mono)',
-          fontSize: '0.8rem',
-          color: 'var(--ink-soft)',
-          whiteSpace: 'pre',
-        }}
-      >
-        {mode === 'before'
-          ? `useEffect(() => {\n  fakeCheck(value)\n    .then(s => setSuggestion(s))\n    .catch(() => setSuggestion(null));\n}, [value]);`
-          : `useEffect(() => {\n  const check = async () => {\n    try {\n      const s = await fakeCheck(value);\n      setSuggestion(s);\n    } catch {\n      setSuggestion(null);\n    }\n  };\n  check();\n}, [value]);`}
-      </div>
+      <Panel>
+        <pre style={{ margin: 0, fontFamily: 'var(--mono)', fontSize: '0.8rem', color: 'var(--ink-soft)', whiteSpace: 'pre' }}>
+          {mode === 'before'
+            ? `useEffect(() => {\n  fakeCheck(value)\n    .then(s => setSuggestion(s))\n    .catch(() => setSuggestion(null));\n}, [value]);`
+            : `useEffect(() => {\n  const check = async () => {\n    try {\n      const s = await fakeCheck(value);\n      setSuggestion(s);\n    } catch {\n      setSuggestion(null);\n    }\n  };\n  check();\n}, [value]);`}
+        </pre>
+      </Panel>
     </div>
   );
 }
@@ -138,28 +131,23 @@ export default function AsyncEffectDemo() {
   const [mode, setMode] = useState<Mode>('before');
 
   return (
-    <div className="demo">
-      <div className="demo-label">Interactive · React</div>
+    <Demo>
       <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
-        {(['before', 'after'] as const).map((m) => (
-          <button
-            key={m}
-            onClick={() => setMode(m)}
-            style={
-              m === mode
-                ? undefined
-                : { background: 'transparent', color: 'var(--ink-soft)', border: '1px solid var(--rule)' }
-            }
-          >
-            {m === 'before' ? '.then()/.catch()' : 'inner async fn'}
-          </button>
-        ))}
+        <ToggleGroup
+          value={mode}
+          onChange={setMode}
+          variant="primary"
+          options={[
+            { value: 'before', label: '.then()/.catch()' },
+            { value: 'after', label: 'inner async fn' },
+          ]}
+        />
       </div>
       {mode === 'before' ? <BeforeComponent /> : <AfterComponent />}
       <p style={{ marginTop: '0.75rem', fontSize: '0.85rem', color: 'var(--ink-soft)' }}>
         Try <code>user@gmial.com</code> or <code>user@yaho.com</code> to trigger a suggestion.
         Both modes behave identically — the difference is readability and the door it opens for cleanup.
       </p>
-    </div>
+    </Demo>
   );
 }

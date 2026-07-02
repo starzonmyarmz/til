@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { Demo } from '../../../components/demo';
 
 type AppStatus = {
   complete: boolean;
@@ -68,8 +69,7 @@ export default function PollingDemo() {
   };
 
   return (
-    <div className="demo">
-      <div className="demo-label">Interactive · React</div>
+    <Demo>
       <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', marginBottom: '0.75rem' }}>
         <button onClick={start} disabled={running}>
           {running ? 'polling…' : done ? 'restart' : 'start delete'}
@@ -91,6 +91,6 @@ export default function PollingDemo() {
           </li>
         ))}
       </ul>
-    </div>
+    </Demo>
   );
 }

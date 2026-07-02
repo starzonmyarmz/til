@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Demo, Panel, PanelGrid, ToggleGroup } from '../../../components/demo';
 
 type RawSettings = {
   credentialed?: boolean | string;
@@ -20,46 +21,28 @@ function normalize(raw: RawSettings | undefined) {
 }
 
 export default function NormalizeDemo() {
-  const [idx, setIdx] = useState(0);
-  const sample = SAMPLES[idx];
+  const [idx, setIdx] = useState('0');
+  const sample = SAMPLES[Number(idx)];
   const normalized = useMemo(() => normalize(sample.value), [sample]);
 
   return (
-    <div className="demo">
-      <div className="demo-label">Interactive · React</div>
+    <Demo>
       <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
-        {SAMPLES.map((s, i) => (
-          <button
-            key={s.label}
-            onClick={() => setIdx(i)}
-            style={
-              i === idx
-                ? undefined
-                : { background: 'transparent', color: 'var(--ink-soft)', border: '1px solid var(--rule)' }
-            }
-          >
-            {s.label}
-          </button>
-        ))}
+        <ToggleGroup
+          value={idx}
+          onChange={setIdx}
+          variant="pill"
+          options={SAMPLES.map((s, i) => ({ value: String(i), label: s.label }))}
+        />
       </div>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: '0.75rem',
-          fontFamily: 'var(--mono)',
-          fontSize: '0.9rem',
-        }}
-      >
-        <div style={{ padding: '0.6rem 0.75rem', border: '1px solid var(--rule)', borderRadius: '4px' }}>
-          <div style={{ color: 'var(--ink-soft)', marginBottom: '0.3rem' }}>raw input</div>
+      <PanelGrid columns={2}>
+        <Panel title="raw input">
           <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{JSON.stringify(sample.value, null, 2)}</pre>
-        </div>
-        <div style={{ padding: '0.6rem 0.75rem', border: '1px solid var(--rule)', borderRadius: '4px' }}>
-          <div style={{ color: 'var(--ink-soft)', marginBottom: '0.3rem' }}>normalized · boolean</div>
+        </Panel>
+        <Panel title="normalized · boolean">
           <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{JSON.stringify(normalized, null, 2)}</pre>
-        </div>
-      </div>
-    </div>
+        </Panel>
+      </PanelGrid>
+    </Demo>
   );
 }

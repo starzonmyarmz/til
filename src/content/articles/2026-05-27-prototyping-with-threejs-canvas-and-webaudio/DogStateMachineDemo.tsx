@@ -7,6 +7,7 @@ import {
   Output,
   OutputRow,
   Console,
+  CanvasStage,
   Hint,
 } from '../../../components/demo';
 import type { ConsoleLine, Tone } from '../../../components/demo';
@@ -266,24 +267,14 @@ export default function DogStateMachineDemo() {
         </span>
       </Toolbar>
 
-      <div style={{ display: 'flex', justifyContent: 'center', margin: '0.5rem 0 1rem' }}>
-        <canvas
-          ref={canvasRef}
-          width={W}
-          height={H}
-          onClick={onCanvasClick}
-          style={{
-            width: '100%',
-            maxWidth: W,
-            height: 'auto',
-            imageRendering: 'pixelated',
-            border: '1px solid var(--rule)',
-            borderRadius: 4,
-            cursor: 'crosshair',
-            background: '#f4f0e0',
-          }}
-        />
-      </div>
+      <CanvasStage
+        canvasRef={canvasRef}
+        width={W}
+        height={H}
+        onClick={onCanvasClick}
+        background="#f4f0e0"
+        cursor="crosshair"
+      />
 
       <Output>
         <OutputRow label="pee cooldown:">{s.peeTimer.toFixed(1)}s</OutputRow>

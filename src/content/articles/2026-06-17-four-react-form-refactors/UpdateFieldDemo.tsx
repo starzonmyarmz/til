@@ -7,9 +7,8 @@ import {
   Toolbar,
   ToggleGroup,
   Hint,
+  useConsoleLog,
 } from "../../../components/demo";
-
-type ConsoleLine = { line: string; tone: "info" | "good" | "warn" | "bad" };
 
 type FormValues = {
   name: string;
@@ -32,35 +31,21 @@ type Approach = "any" | "generic";
 export default function UpdateFieldDemo() {
   const [approach, setApproach] = useState<Approach>("any");
   const [form, setForm] = useState<FormValues>({ ...initial });
-  const [log, setLog] = useState<ConsoleLine[]>([
-    {
-      line: "try the calls below — generic version catches type mismatches",
-      tone: "info",
-    },
-  ]);
+  const { lines, push, reset } = useConsoleLog(9);
 
   // Typed only with `any` — no compile-time safety (simulated at runtime here)
   const updateFieldAny = (field: string, value: unknown) => {
     const expected = typeof initial[field as keyof FormValues];
     const actual = typeof value;
     if (expected !== actual) {
-      setLog((prev) => [
-        ...prev.slice(-8),
-        {
-          line: `updateField("${field}", ${JSON.stringify(value)}) → runtime error caught: expected ${expected}, got ${actual}`,
-          tone: "bad",
-        },
-      ]);
+      push(
+        `updateField("${field}", ${JSON.stringify(value)}) → runtime error caught: expected ${expected}, got ${actual}`,
+        "bad",
+      );
       return;
     }
     setForm((prev) => ({ ...prev, [field]: value }));
-    setLog((prev) => [
-      ...prev.slice(-8),
-      {
-        line: `updateField("${field}", ${JSON.stringify(value)}) → ok`,
-        tone: "good",
-      },
-    ]);
+    push(`updateField("${field}", ${JSON.stringify(value)}) → ok`, "good");
   };
 
   // Generic constrained version
@@ -69,13 +54,7 @@ export default function UpdateFieldDemo() {
     value: FormValues[K],
   ) => {
     setForm((prev) => ({ ...prev, [field]: value }));
-    setLog((prev) => [
-      ...prev.slice(-8),
-      {
-        line: `updateField("${field}", ${JSON.stringify(value)}) → ok`,
-        tone: "good",
-      },
-    ]);
+    push(`updateField("${field}", ${JSON.stringify(value)}) → ok`, "good");
   };
 
   const calls: Array<{ label: string; valid: boolean; run: () => void }> = [
@@ -132,9 +111,8 @@ export default function UpdateFieldDemo() {
           onChange={(v) => {
             setApproach(v as Approach);
             setForm({ ...initial });
-            setLog([
-              { line: "switched approach — try the calls", tone: "info" },
-            ]);
+            reset();
+            push("switched approach — try the calls", "info");
           }}
           options={[
             { value: "any", label: "(field: string, value: any)" },
@@ -185,7 +163,18 @@ export default function UpdateFieldDemo() {
         <OutputRow label="zip:">{form.zip || "—"}</OutputRow>
       </Output>
 
-      <Console lines={log} />
+      <Console
+        lines={
+          lines.length
+            ? lines
+            : [
+                {
+                  line: "try the calls below — generic version catches type mismatches",
+                  tone: "info",
+                },
+              ]
+        }
+      />
 
       <Hint>
         With the generic signature, the wrong-type calls are compile errors in
