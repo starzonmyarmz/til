@@ -365,6 +365,29 @@ a:hover {
   padding: 0.85rem 1rem;
   margin: 0.9rem 0;
 }
+.demo .panel-title {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  margin-bottom: 0.4rem;
+}
+
+/* PanelGrid — side-by-side Panels (e.g. raw input vs parsed output) */
+.demo .panel-grid {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0.9rem 0;
+}
+.demo .panel-grid .panel {
+  margin: 0;
+}
+
+/* CanvasStage — centered, bordered, pixel-art canvas */
+.demo .canvas-stage {
+  display: flex;
+  justify-content: center;
+  margin: 1rem 0;
+}
 
 /* Code-like output inside demos */
 .demo .codelike {
@@ -507,6 +530,21 @@ a:hover {
   box-sizing: border-box;
 }
 .demo .input-mono:focus {
+  outline: none;
+  border-color: var(--ink-soft);
+}
+
+/* Mono dropdown — matches input-mono */
+.demo .select-mono {
+  font-family: var(--mono);
+  font-size: 0.9rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--ink);
+}
+.demo .select-mono:focus {
   outline: none;
   border-color: var(--ink-soft);
 }
