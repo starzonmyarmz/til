@@ -1,0 +1,142 @@
+---
+title: "Bolting a promise onto a callback-only function without breaking a single caller"
+date: 2026-07-07
+description: "A confirm-dialog function only supported onConfirm and onCancel callbacks. Making it also awaitable — without touching any of its roughly twenty existing call sites — meant capturing a promise’s resolve function outside its own executor, then merging that promise with the function’s existing return value, and dodging a lint rule that mistook a plain helper for a React component along the way."
+tags: ["typescript", "react", "promises"]
+---
+
+import DualApiDemo from './DualApiDemo.tsx';
+import DeferredDemo from './DeferredDemo.tsx';
+import ThenableDemo from './ThenableDemo.tsx';
+
+A small confirm-dialog function had one job: show a modal, then run `onConfirm` or `onCancel` depending on which button got clicked. That was the whole API. It worked fine for a couple of years, until a plan came together to swap out a different, older confirm-dialog library elsewhere in the codebase for this one — and every single call site of that older library used promises, not callbacks. `await confirmDialog(...)`, `.then(({ isConfirmed }) => ...)`, destructuring `isConfirmed` and `isDismissed` off the result. None of it used callbacks at all.
+
+Rewriting the older call sites to use callbacks instead was one option. So was rewriting the confirm-dialog function to drop callbacks entirely and return a promise instead — except that function already had roughly twenty existing call sites of its own, all written against the callback API, in code with no appetite for a mass find-and-replace across two unrelated codebases.
+
+The actual fix didn’t require choosing. The function grew a promise-returning mode *in addition to* its callback mode, with both firing off the same click. Nobody who already called it needed to change anything. Here’s how that works, and the few sharp edges it ran into along the way.
+
+---
+
+## 1. Two APIs, one event
+
+The starting point looked roughly like this:
+
+```tsx
+function confirmDialog({ onConfirm, onCancel, title }: Options) {
+  const dialog = createDialogElement(title);
+
+  const handleConfirm = () => {
+    dialog.remove();
+    onConfirm?.();
+  };
+
+  const handleCancel = () => {
+    dialog.remove();
+    onCancel?.();
+  };
+
+  wireUpButtons(dialog, handleConfirm, handleCancel);
+  return { close: () => dialog.remove() };
+}
+```
+
+Nothing about this needs to change to add a promise. `handleConfirm` and `handleCancel` are exactly the two places where “the user made a choice” becomes known — so they’re exactly the two places to also settle a promise, right alongside the existing callback calls. The callback and the promise aren’t two different implementations of the same feature; they’re two different ways of finding out about the same one underlying event.
+
+The demo below makes that shared event explicit. Pick a calling style, open the dialog, then click Confirm or Cancel — the console shows both the callback and the promise reacting to the identical click, regardless of which style (or both) is in use.
+
+<DualApiDemo client:load />
+
+The lesson generalizes past dialogs: any function that currently reports an outcome through a callback can grow a promise-shaped way to report the *same* outcome, at the *same* call site in its own body, with zero risk to the callback path. The two aren’t in tension because they were never doing different jobs — they’re both just told the news when it happens.
+
+---
+
+## 2. Capturing `resolve` outside its own executor
+
+The tricky part is mechanical: a `Promise` only exposes its `resolve` function inside the callback passed to `new Promise(...)`, and that callback runs synchronously, before the dialog has even rendered. There’s no button to click yet. The `resolve` that needs to be called later — from `handleConfirm`, potentially seconds or minutes after the dialog opened — has to escape that inner scope somehow.
+
+The standard trick is to declare a variable above the promise and assign into it from inside the executor:
+
+```ts
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+```
+
+This works because the executor passed to `new Promise` runs *immediately and synchronously*, during the `new Promise(...)` call itself — not later, not on a microtask. By the time `deferred()` returns, `resolve` has already been assigned; the `!` after its type just tells TypeScript that “trust me, this will be set before anyone reads it,” which is true precisely because of that synchronous guarantee. Nothing here is racy or timing-dependent, even though it might look that way at a glance.
+
+Once `resolve` has escaped, it can be called from anywhere — a click handler, a `setTimeout`, a WebSocket message — with no connection at all to the original `new Promise(...)` call other than closing over the same variable.
+
+<DeferredDemo client:visible />
+
+Watch the console in the demo: the promise is created and immediately reported as pending, and `resolve` only gets called once the timer fires — from code that has no idea it’s holding the one function capable of settling that specific promise. That gap between “promise created” and “promise resolved” is exactly the gap between “dialog opened” and “user clicked a button,” just compressed into a slider.
+
+---
+
+## 3. Merging a promise with an object via `Object.assign`
+
+Settling a promise from inside `handleConfirm` covers the promise half. The other half is the return value: the function already returned `{ close: () => dialog.remove() }` so callers could dismiss the dialog programmatically. Adding a promise return value can’t mean choosing between returning the promise *or* returning that object — existing callers of `.close()` would break.
+
+A promise is just an object with a `.then()` method (informally, a “thenable”) plus some engine-level magic that makes `await` recognize it. Nothing stops additional, unrelated properties from living on that same object — including a `close` method that has nothing to do with promise mechanics at all. `Object.assign` merges properties onto an existing object and returns that same object, which makes it a direct fit here:
+
+```ts
+const { promise, resolve } = deferred<Result>();
+
+// ...settle `resolve` from handleConfirm/handleCancel as before...
+
+return Object.assign(promise, {
+  close: () => dialog.remove(),
+});
+```
+
+The value returned from `confirmDialog(...)` is now, simultaneously, a real `Promise` (so `await` and `.then()` work exactly as they would on any other promise) *and* an object with a `.close()` method sitting right on it, completely untouched by anything promise-related.
+
+<ThenableDemo client:visible />
+
+The instance in the demo above is one object the whole time. Calling `.close()` and awaiting the same instance aren’t two different features bolted together — they’re two different ways of reaching into the same value.
+
+---
+
+## 4. A lint rule can mistake a plain function for a component
+
+The `deferred()` helper originally lived inline, directly inside the dialog function, written the obvious way:
+
+```ts
+function confirmDialog({ onConfirm, onCancel, title }: Options) {
+  let resolveResult: (result: Result) => void;
+  const result = new Promise<Result>((resolve) => {
+    resolveResult = resolve;
+  });
+  // ...
+}
+```
+
+`eslint-plugin-react-hooks` flagged the reassignment of `resolveResult` inside the executor with “Cannot reassign variable after render completes,” which is a real rule for a real problem — reassigning a plain variable from inside a React component’s render body is a sign of trying to smuggle mutable state past React’s rendering model, and normally deserves exactly that warning. The catch: `confirmDialog` isn’t a component. It doesn’t return JSX, and it’s never called by React. The lint plugin’s heuristic for “is this a component” boils down to “is this function’s name capitalized” — and `confirmDialog`, named to match the convention of the library’s public API, happened to satisfy that heuristic by accident.
+
+There’s no `// eslint-disable` comment that fixes the actual shape of the problem — suppressing the rule silences a real check everywhere else in the file too. Extracting the deferred-promise logic into a small, lowercase, clearly-not-a-component helper function sidesteps the heuristic entirely, because lowercase function names never trigger it, and happens to produce a cleaner, independently testable unit besides. (No interactive demo for this one — the fix is entirely about where a few lines of code live, not about runtime behavior.)
+
+---
+
+## 5. Testing that a promise resolves after a simulated click
+
+The last piece worth naming is how this gets tested. Testing Library’s `fireEvent.click(...)` is synchronous — it fires the DOM event and returns immediately, which is enough to trigger `handleConfirm` and, inside it, `resolve(...)`. Vitest and Jest’s `expect(...).resolves` matcher handles the asynchronous half:
+
+```ts
+const instance = confirmDialog({ title: "Delete item?" });
+
+fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+
+await expect(instance).resolves.toEqual({
+  isConfirmed: true,
+  isDismissed: false,
+});
+```
+
+`instance` here is exactly the merged promise-plus-object from section 3 — `resolves` unwraps it the same way `await` would in application code, and asserts on the settled value. No mocking of timers, no manually awaiting a click handler’s return value (`fireEvent.click` doesn’t return one worth awaiting); the click and the assertion are two separate, independently-written lines that happen to be talking about the same underlying event. (No demo here either — this is a testing pattern, not a rendering behavior, and reads clearly enough as the snippet above.)
+
+---
+
+None of these five pieces were about picking promises over callbacks, or vice versa. The actual constraint — an existing library with real callers on one side, and a new set of callers who only speak promises on the other — ruled out “pick one” from the start. Once the callback calls and the promise settlement were recognized as two views onto the same underlying “the user clicked something” event, the rest was mechanical: capture `resolve` before there’s anything to resolve, merge it onto whatever the function already returned, and rename one helper function so a linter stops mistaking it for a component it was never going to be.
