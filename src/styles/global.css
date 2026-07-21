@@ -164,6 +164,23 @@ a:hover {
   font-style: italic;
   padding: 2rem 0;
 }
+.index-tags {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.6rem 0 0;
+  padding: 0;
+}
+.tag-pill {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  color: var(--ink-faint);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  padding: 0.15rem 0.55rem;
+}
 
 /* Article page */
 .article-header {
@@ -472,7 +489,10 @@ a:hover {
   padding: 0.3rem 0.65rem;
   border-radius: 4px;
   cursor: pointer;
-  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+  transition:
+    color 120ms ease,
+    border-color 120ms ease,
+    background 120ms ease;
 }
 .demo .pill:hover:not(:disabled) {
   color: var(--ink);
@@ -600,10 +620,18 @@ a:hover {
 }
 
 /* Tone helpers — semantic colors usable on text/borders inside demos */
-.demo [data-tone="info"] { color: var(--ink-soft); }
-.demo [data-tone="good"] { color: var(--tone-good); }
-.demo [data-tone="warn"] { color: var(--tone-warn); }
-.demo [data-tone="bad"]  { color: var(--tone-bad);  }
+.demo [data-tone="info"] {
+  color: var(--ink-soft);
+}
+.demo [data-tone="good"] {
+  color: var(--tone-good);
+}
+.demo [data-tone="warn"] {
+  color: var(--tone-warn);
+}
+.demo [data-tone="bad"] {
+  color: var(--tone-bad);
+}
 
 /* Slider — labelled range with mono value readout */
 .demo .slider {

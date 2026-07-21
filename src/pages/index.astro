@@ -32,6 +32,13 @@ const fmt = (d: Date) =>
               <a href={`${import.meta.env.BASE_URL}${article.id}/`}>{article.data.title}</a>
             </h2>
             {article.data.description && <p>{article.data.description}</p>}
+            {article.data.tags && article.data.tags.length > 0 && (
+              <ul class="index-tags">
+                {article.data.tags.map((tag) => (
+                  <li class="tag-pill">{tag}</li>
+                ))}
+              </ul>
+            )}
           </article>
         </li>
       ))
