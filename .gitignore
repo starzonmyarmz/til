@@ -17,5 +17,5 @@ pnpm-debug.log*
 
 .DS_Store
 
-.claude/
+.claude/settings.local.json
 .zed/
