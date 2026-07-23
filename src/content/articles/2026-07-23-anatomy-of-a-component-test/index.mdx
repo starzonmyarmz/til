@@ -1,0 +1,301 @@
+---
+title: "Reading a React component test line by line"
+date: 2026-07-23
+description: "A beginner’s walkthrough of a real Vitest and Testing Library spec file — what render, screen, fireEvent, waitFor, and vi.mock actually do, and why each line is there."
+tags: ["testing", "javascript", "react"]
+---
+
+import QueryStrategyDemo from './QueryStrategyDemo.tsx';
+
+Most testing tutorials build up a toy example one concept at a time: first a trivial `expect(1 + 1).toBe(2)`, then a simple render, then eventually something that looks like real code. That’s a reasonable way to learn, but it leaves a gap: a real test file for a real component, with mocking, async behavior, and several different query styles all mixed together, still looks like a wall of unfamiliar syntax.
+
+This article goes the other direction. It takes one real test file — six tests covering a settings form with a toggle, a couple of dropdowns, and a save button that talks to a server — and walks through every line. No prior testing experience assumed. By the end, the goal is that this exact kind of file stops looking like magic.
+
+The component under test is a form that lets someone turn on automatic credit top-ups: when a balance drops below some threshold, automatically add more credits, using two dropdown selects to pick the refill amount and the threshold. The component itself doesn’t matter much for this article — it’s just "a form with a toggle, two dropdowns, and a save button that hits an API." What matters is how the test proves it works.
+
+## The file, in full
+
+Here’s the whole thing, lightly adapted (the real import paths are longer). Skim it once — nothing below assumes it makes sense yet — then the rest of the article goes through it top to bottom.
+
+```jsx
+import React from "react"
+import { vi } from "vitest"
+import { render, screen, fireEvent, waitFor } from "@testing-library/react"
+import AutoRefillForm from "../components/auto_refill_form"
+
+const requestMock = vi.fn()
+
+vi.mock("../utils/api", () => ({
+  request: (...args) => requestMock(...args),
+}))
+
+const baseProps = {
+  disabled: false,
+  autoRefillCreditsAmount: 0,
+  autoRefillThreshold: 0,
+  costRatio: 0.01,
+  organization: { taxable: false },
+}
+
+beforeEach(() => {
+  requestMock.mockReset()
+})
+
+describe("AutoRefillForm", () => {
+  it("renders off with no details or badge when auto-refill is disabled", () => {
+    render(<AutoRefillForm {...baseProps} />)
+
+    expect(screen.queryByText("On")).not.toBeInTheDocument()
+    expect(screen.queryByLabelText("Auto-refill amount")).not.toBeInTheDocument()
+  })
+
+  // five more tests below...
+})
+```
+
+That’s the skeleton. Now the details.
+
+## The imports
+
+```jsx
+import React from "react"
+import { vi } from "vitest"
+import { render, screen, fireEvent, waitFor } from "@testing-library/react"
+import AutoRefillForm from "../components/auto_refill_form"
+```
+
+Four imports, four different jobs:
+
+**`React`** — this file writes JSX (the `<AutoRefillForm ... />` syntax below), and JSX needs to know which library turns those angle brackets into actual objects. Depending on the build setup, this import is sometimes optional today, but a lot of codebases still include it out of habit and because it makes the dependency explicit.
+
+**`vi`** — this is Vitest’s built-in toolbox for faking things: fake functions, fake modules, fake timers. Think of it as the test-only utility belt. It’s used twice in this file, both explained below.
+
+**`render`, `screen`, `fireEvent`, `waitFor`** — these four all come from a library called Testing Library, which is not tied to Vitest specifically (it also works with Jest). Testing Library’s whole philosophy is: test the component the way a user would experience it — find things by their visible text or label, click them, and check what appears — rather than reaching into the component’s internal state or calling its functions directly. Each of the four gets its own section further down.
+
+**`AutoRefillForm`** — the actual component being tested, imported the normal way, exactly like any other file would import it.
+
+## Faking the network: `vi.fn()` and `vi.mock()`
+
+```jsx
+const requestMock = vi.fn()
+
+vi.mock("../utils/api", () => ({
+  request: (...args) => requestMock(...args),
+}))
+```
+
+This is the part that trips people up first, so it’s worth slowing down.
+
+The real component imports a `request` function from a shared API-utility module and calls it to save settings to a server. If the test just ran the component as-is, clicking "Save" would try to make a real network call — which would fail in a test environment (there’s no server running), and even if it didn’t fail, it would make every test run slow, flaky, and dependent on some backend being up and having the right data.
+
+So the test replaces that whole module with a fake version before the component ever runs. `vi.mock("../utils/api", ...)` tells Vitest: "any time any file in this test imports something from `../utils/api`, don’t give it the real file — give it this fake object instead." The fake object exposes one function, `request`, and that function just forwards its arguments to `requestMock`.
+
+`requestMock` itself comes from `vi.fn()`, which creates something called a **mock function** (also called a spy). A mock function is a real, callable JavaScript function — but it also secretly remembers every time it was called, what arguments it was called with, and it can be told in advance what to return. That combination — a fake that both stands in for the real thing *and* remembers what happened to it — is the core trick that makes the rest of this file possible. Two things fall out of having `requestMock` sitting between the test and the component:
+
+1. The test can control exactly what the "server" says back (success, failure, or a network error), for each individual test.
+2. The test can later check exactly what the component tried to send, without needing a real server to receive it.
+
+This general pattern — "swap the risky, slow, or unpredictable dependency for a fake" — is called **mocking**, and it’s one of the central ideas in automated testing generally, not just in this framework.
+
+## Keeping tests independent: `beforeEach`
+
+```jsx
+beforeEach(() => {
+  requestMock.mockReset()
+})
+```
+
+`beforeEach` is a function the test framework provides that runs its callback before *every single test* in the file (or in the surrounding `describe` block — more on that shortly). Here, it resets the mock function between tests.
+
+Why does that matter? Because `requestMock` remembers state — how many times it was called, what it returned last, and so on — and that memory persists across calls by default. Without resetting it, a later test could accidentally see leftover call history from an earlier test and get confused about whether *it* triggered a call or a previous test did. `mockReset()` wipes all of that: call history, any configured return value, everything. Each test starts from a truly clean slate.
+
+This is really an instance of a bigger testing principle: **tests should be independent of each other.** Nothing that happens in test #3 should affect whether test #5 passes. If tests share mutable state and don’t clean up, they can pass or fail depending on what order they happen to run in — which is one of the most frustrating categories of bug to track down, because "it works when I run it by itself" is a very confusing sentence to debug.
+
+## A shared starting point: `baseProps`
+
+```jsx
+const baseProps = {
+  disabled: false,
+  autoRefillCreditsAmount: 0,
+  autoRefillThreshold: 0,
+  costRatio: 0.01,
+  organization: { taxable: false },
+}
+```
+
+Nothing fancy here — just a plain JavaScript object holding the default set of props (component inputs) that most tests want. Later, individual tests do things like:
+
+```jsx
+render(<AutoRefillForm {...baseProps} autoRefillCreditsAmount={5000} autoRefillThreshold={1500} />)
+```
+
+The `{...baseProps}` spreads all of those default properties onto the component, and anything listed afterward (like `autoRefillCreditsAmount={5000}`) overrides just that one property. This is a plain JavaScript/React pattern, not anything testing-specific — but it’s extremely common in test files, because it lets each test show only the one or two props it actually cares about, instead of repeating a five-property object six times with tiny variations. The reader’s eye goes straight to what’s different about this particular test.
+
+## The shape of a test: `describe` and `it`
+
+```jsx
+describe("AutoRefillForm", () => {
+  it("renders off with no details or badge when auto-refill is disabled", () => {
+    // ...
+  })
+})
+```
+
+`describe` groups related tests under a label — purely for organization and for readable output when tests run (`beforeEach` also scopes to the nearest surrounding `describe`, which is why it applies to every test below it here). `describe` blocks can nest, though this file only needs one level.
+
+`it` (an alias for `test` — both work identically) declares a single test case. The string is a human-readable description, and it shows up in the terminal when tests run, especially when one fails: instead of "test #4 failed," the runner prints "surfaces an error message when the save request fails — FAILED," which is immediately meaningful without opening the file.
+
+The function passed to `it` is the actual test. Vitest runs it, and the test either finishes without throwing an error (pass) or throws an error partway through (fail) — usually because an `expect(...)` assertion didn’t hold. There’s no separate "did it pass" return value to check; a test passing simply means nothing inside it threw.
+
+## The first test: proving something is absent
+
+```jsx
+it("renders off with no details or badge when auto-refill is disabled", () => {
+  render(<AutoRefillForm {...baseProps} />)
+
+  expect(screen.queryByText("On")).not.toBeInTheDocument()
+  expect(screen.queryByLabelText("Auto-refill amount")).not.toBeInTheDocument()
+})
+```
+
+`render(<AutoRefillForm {...baseProps} />)` mounts the component into a simulated browser page. Test runs don’t open a real browser window — instead they use a lightweight in-memory DOM implementation (this project uses one called happy-dom; jsdom is another common choice) that behaves enough like a real browser to render HTML and respond to events, without the overhead of launching Chrome for every test. `render` takes the JSX, builds that fake DOM, and hands back some utilities — though this file mostly uses the `screen` object instead, which is explained next.
+
+`screen` is Testing Library’s entry point for finding things in whatever was just rendered. Rather than passing a container reference around, `screen` acts like a global search box scoped to the current test’s rendered output. It has methods named after two axes: *how to find the element* and *what to do if it’s not there.*
+
+This first test wants to prove something is **not** on the page — that when auto-refill is off, there’s no "On" badge and no visible amount dropdown. `queryByText` and `queryByLabelText` are the right tool for that: the `query*` family of methods returns the matching element if found, or `null` if not — it never throws. That makes it safe to assert on absence: `expect(...).not.toBeInTheDocument()` reads naturally as "this thing should not be there," and it works whether the query returned `null` or (if the test were wrong) an actual element.
+
+## get vs. query vs. find
+
+That "returns null instead of throwing" detail matters enough to slow down on, because Testing Library actually offers three families of query, and picking the right one is a common early stumbling block:
+
+- **`getBy...`** — throws an error immediately if nothing matches. Use this when the element *should* be there and its absence is itself the bug worth reporting loudly.
+- **`queryBy...`** — returns `null` if nothing matches, instead of throwing. Use this specifically when checking that something is *absent* — trying to assert `.not.toBeInTheDocument()` on a `getBy` query would never even reach the assertion, because the `getBy` call itself throws first.
+- **`findBy...`** — returns a Promise that keeps checking (it "polls") until the element shows up or a timeout passes (a second, roughly). Use this for anything that appears *asynchronously* — after a promise resolves, a timer fires, or some other delayed update.
+
+The demo below simulates all three against the same toggle, so the differing behavior is visible rather than just described.
+
+<QueryStrategyDemo client:load />
+
+Toggle "Element: present" or "Element: absent", then try each query. With the element absent, `getByText` fails loudly and immediately; `queryByText` calmly returns nothing; `findByText` waits around for a bit before giving up. With the element present, all three succeed — `findByText` just takes a moment longer because it’s built to poll rather than check once.
+
+## The second test: proving something is present, with a partial match
+
+```jsx
+it("shows the On badge and summary when auto-refill is enabled", () => {
+  render(
+    <AutoRefillForm {...baseProps} autoRefillCreditsAmount={5000} autoRefillThreshold={1500} />
+  )
+
+  expect(screen.getByText("On")).toBeInTheDocument()
+  expect(screen.getByText("5,000 credits")).toBeInTheDocument()
+  expect(screen.getByText(/below 1,500 credits/)).toBeInTheDocument()
+})
+```
+
+This time the props say auto-refill *is* configured (both amounts are greater than zero), so the test expects to actually find things — which means `getByText` is the right call now, not `queryByText`. If any of these three elements were missing, the test should fail loudly and immediately, which is exactly what `getBy` does.
+
+Notice the third line passes a regular expression, `/below 1,500 credits/`, instead of a plain string. Testing Library’s text queries accept either. A plain string like `"On"` has to match the entire text content of some element exactly. A regex only has to match *part* of the text — useful here because the real sentence on the page is longer ("...once balance is below 1,500 credits.") and the test only cares about confirming the number and the word "below" showed up somewhere in it, not reproducing the whole sentence character-for-character. Loose enough to not break if a comma or word elsewhere in the sentence changes, tight enough to still catch a real bug.
+
+## The third test: simulating a click
+
+```jsx
+it("switches to edit mode with Select controls when Change is clicked", () => {
+  render(
+    <AutoRefillForm {...baseProps} autoRefillCreditsAmount={5000} autoRefillThreshold={1500} />
+  )
+
+  fireEvent.click(screen.getByText("Change"))
+
+  expect(screen.getByLabelText("Auto-refill amount")).toBeInTheDocument()
+  expect(screen.getByLabelText("Credits threshold")).toBeInTheDocument()
+})
+```
+
+`fireEvent` is Testing Library’s way of simulating real DOM events — clicks, changes, key presses — on the fake page built by `render`. `fireEvent.click(element)` dispatches an actual `click` event at that element, the same kind of event a real mouse click produces, which means any click handler wired up in the component genuinely runs, exactly as it would for a real user.
+
+This test finds the "Change" button with `getByText("Change")` (it must exist, so `getBy` is correct here — same reasoning as the previous section), clicks it, and then checks that clicking flipped the component from a summary view into an editable form with two dropdowns.
+
+Those two dropdowns get found with `getByLabelText` rather than `getByText`. That’s a deliberate choice, and it’s worth understanding why it’s usually the *preferred* query when a form control has a label at all: it doesn’t just check that some text exists somewhere on the page — it checks that a form control is properly *labeled*, the same way a screen reader would announce it to someone who can’t see the layout. If the label’s wiring were broken (say, the visible text didn’t point at the actual `<select>` via `htmlFor`/`id` or `aria-label`), `getByLabelText` would fail to find it even though the text is technically visible on the page — catching an accessibility bug that a plain text search would miss entirely. Testing Library ranks its own queries by exactly this kind of preference, generally favoring role and label-based queries over raw text matching, because they double as a lightweight accessibility check for free.
+
+## Roles, and a longer async test
+
+```jsx
+it("saves the selected amounts and returns to the summary view", async () => {
+  requestMock.mockResolvedValue({ ok: true })
+  render(<AutoRefillForm {...baseProps} />)
+
+  fireEvent.click(screen.getByRole("switch"))
+  fireEvent.change(screen.getByLabelText("Auto-refill amount"), { target: { value: "5000" } })
+  fireEvent.click(screen.getByText("Save"))
+
+  await waitFor(() =>
+    expect(requestMock).toHaveBeenCalledWith(
+      "update_auto_refill_credits_settings",
+      expect.objectContaining({
+        data: {
+          data: {
+            type: "UpdateAutoRefillCreditsSettings",
+            attributes: { auto_refill_credits_amount: 5000, auto_refill_threshold: 500 },
+          },
+        },
+        method: "POST",
+      })
+    )
+  )
+  await waitFor(() => expect(screen.getByText("On")).toBeInTheDocument())
+})
+```
+
+There’s a lot happening here, so it helps to walk it in the order it actually executes.
+
+**Setting up the fake response.** `requestMock.mockResolvedValue({ ok: true })` tells the mock function: "whenever you’re called, return a Promise that resolves to `{ ok: true }`." This is configuring the fake network layer’s response *before* triggering anything, since the component will call it moments later and needs something to get back.
+
+**`getByRole("switch")`.** A new query shows up here: finding an element by its ARIA *role* rather than its text or label. "Role" is an accessibility concept — every interactive element has (or should have) a role that describes what kind of control it is to assistive technology: `button`, `checkbox`, `switch`, `link`, and so on. The toggle in this component is built with `role="switch"`, so this query finds it the same way a screen reader would identify it, without caring what visible text happens to be near it. Testing Library actually recommends reaching for `getByRole` as the *first* choice for anything interactive, before label or text queries — it’s the query style closest to "how does an assistive technology, or a sighted user scanning for a control, actually find this thing."
+
+**`fireEvent.change`.** Clicking works for buttons and toggles, but a `<select>` dropdown needs a different kind of event to represent "the user picked a different option." `fireEvent.change(element, { target: { value: "5000" } })` simulates exactly that: it sets the element’s value and fires a `change` event, which is what a real dropdown selection produces.
+
+**Why `async` and `await waitFor`.** The test function itself is declared `async`, and it uses `await` twice. That’s because saving triggers a chain of asynchronous work: the click handler calls the (mocked) `request` function, which returns a Promise; that Promise resolving triggers a state update inside the component; and *that* state update is what makes the "On" badge (and the return to the summary view) actually show up in the DOM. None of that happens synchronously in the same tick as the `fireEvent.click(screen.getByText("Save"))` call above it — there's a gap, measured in microtasks and a render cycle, between "click happened" and "UI reflects the result."
+
+`waitFor` bridges that gap. It takes a callback containing an assertion, and instead of running it once, it retries the callback repeatedly (typically many times over the space of a second) until it either stops throwing (success) or a timeout passes (test fails with the last error). The first `waitFor` here waits until the mock function shows it was actually called with the expected save payload; the second waits until the "On" text actually reappears on the page. Both are really the same underlying idea — "give the asynchronous work a moment to catch up before checking" — applied to two different things worth checking.
+
+**`toHaveBeenCalledWith` and `expect.objectContaining`.** `toHaveBeenCalledWith` is a mock-function-specific assertion: it checks not just that the fake function was called, but that it was called with these specific arguments. Since the component builds a fairly large nested object to send to the server, and the test only wants to confirm the *important* parts of it (the endpoint name, the method, the specific numbers that were typed in) without also asserting on every unrelated property that happens to be in there, it wraps the expected object in `expect.objectContaining({...})`. That tells the matcher "the real argument needs to contain at least these properties with these values — extra properties elsewhere in the object are fine, ignore them." Without it, the assertion would need to spell out the *entire* argument exactly, and any unrelated field added to that object later would break this test for no meaningful reason.
+
+## Testing what happens when things go wrong
+
+```jsx
+it("surfaces an error message when the save request fails", async () => {
+  requestMock.mockResolvedValue({ ok: false, json: { errors: ["nope"] } })
+  render(<AutoRefillForm {...baseProps} />)
+
+  fireEvent.click(screen.getByRole("switch"))
+  fireEvent.change(screen.getByLabelText("Auto-refill amount"), { target: { value: "5000" } })
+  fireEvent.click(screen.getByText("Save"))
+
+  expect(await screen.findByText("nope")).toBeInTheDocument()
+})
+
+it("shows a generic error message when the save request rejects", async () => {
+  requestMock.mockRejectedValue(new Error("network down"))
+  render(<AutoRefillForm {...baseProps} />)
+
+  fireEvent.click(screen.getByRole("switch"))
+  fireEvent.change(screen.getByLabelText("Auto-refill amount"), { target: { value: "5000" } })
+  fireEvent.click(screen.getByText("Save"))
+
+  expect(await screen.findByText("An error occurred. Please try again.")).toBeInTheDocument()
+})
+```
+
+These last two tests are the mirror image of the earlier save test — same click-fill-click sequence, but now configuring the fake server to fail in two different ways, and checking that the component handles both gracefully.
+
+The first uses `mockResolvedValue({ ok: false, json: { errors: ["nope"] } })` — a Promise that resolves successfully (the network call itself worked fine), but the *response* represents a rejected save, carrying a specific error message from the (fake) server. The second uses `mockRejectedValue(new Error("network down"))` instead — a Promise that itself fails, simulating something lower-level going wrong, like a dropped connection, rather than the server responding normally with bad news. A component handling both cases correctly needs to display a message either way — the specific server-provided error in the first case, and some sensible fallback text in the second, since there’s no server response to read a message from.
+
+Both tests use `findByText` instead of `waitFor` here, and it’s worth noticing that as a deliberate style choice rather than a random switch. `findByText` is really shorthand for "keep calling `getByText` until it stops throwing, or give up after a timeout" — which is precisely `waitFor(() => getByText(...))`, just spelled more concisely for the extremely common case of "wait for one specific piece of text to show up." The longer `waitFor` form earns its keep when checking something that isn’t a simple "did this text appear" — like the mock-function assertion in the previous test. Both tools are solving the same underlying problem (something takes a moment to become true); `findBy` is just the shorter spelling for the most common shape of that problem.
+
+Testing both the "resolved but unsuccessful" case and the "outright rejected" case is a good instinct worth naming explicitly: a promise-based function has more than one way to fail, and a component that only ever gets tested against the happy path can hide a broken error state for a long time before anyone notices in production.
+
+## Why go to all this trouble
+
+Six tests, one file, and every one of them boils down to the same shape: put the component on a fake page in a known state, act on it the way a person would (click things, change a dropdown), then check what’s visible afterward. None of them peek inside the component’s internals or call an internal function directly — everything is driven through the same rendered output a real user would see.
+
+That restraint is the point. A test suite written this way keeps working even if the component gets rewritten from scratch internally — different state management, different helper functions, a different framework version — as long as it still behaves the same way from the outside: same toggle, same labels, same save behavior, same error handling. That’s exactly the property that makes a test suite trustworthy enough to refactor against without holding one's breath.
