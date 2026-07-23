@@ -53,7 +53,16 @@ To use this skill against a different blog repo:
 3. Optional overrides: `TIL_DEPLOY_WORKFLOW` (default `Deploy to GitHub Pages`), `TIL_BRANCH` (default `main`).
 4. Restart Claude Code, then run `/til` after making a change worth writing up.
 
-The skill assumes an Astro + MDX + React content collection shaped like this one (`src/content/articles/YYYY-MM-DD-<slug>/index.mdx`) and a shared demo component library at `src/components/demo/` — copy those over too if starting a new blog from scratch.
+The skill assumes an Astro + MDX + React content collection shaped like this one (`src/content/articles/YYYY-MM-DD-<slug>/index.mdx`) and a shared demo component library at `src/components/demo/`.
+
+**Starting a new blog from scratch:** don't clone this repo wholesale — `src/content/articles/` is this author's personal posts. Instead copy only the scaffold:
+
+- `.claude/skills/til/SKILL.md`
+- `src/components/demo/`
+- `src/content.config.ts`
+- `src/pages/index.astro` and `src/pages/[...slug].astro` (as a routing reference)
+
+then leave `src/content/articles/` empty for your own posts.
 
 ## Deploy
 
