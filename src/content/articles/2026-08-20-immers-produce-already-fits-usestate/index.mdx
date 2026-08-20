@@ -1,0 +1,152 @@
+---
+title: "Immer’s produce already returns a state updater"
+date: 2026-08-20
+description: "A hand-rolled useImmer hook turned out to be unnecessary — Immer’s produce function already returns exactly the function shape React’s state setters accept."
+tags: ["react", "typescript", "immer"]
+---
+
+import NaiveVsProduce from './NaiveVsProduce.tsx';
+import CurriedForm from './CurriedForm.tsx';
+import StructuralSharing from './StructuralSharing.tsx';
+import FrozenDraft from './FrozenDraft.tsx';
+
+A small editor kept a list of products in state, and picking a different plan for one of them
+meant updating one field, three levels deep, inside one item of an array. Handled by hand, that
+update is a pyramid of spreads: spread the array, find the item, spread the item, spread the
+nested package, overwrite the one field that actually changed. Get any one of those spreads
+wrong and a sibling item’s object identity changes too, silently defeating whatever memoization
+was relying on it.
+
+A custom `useImmer` hook had been sitting in a shared utilities file for exactly this reason —
+wrap `useState` around Immer’s `produce`, and get to write plain mutations instead. It worked
+fine. But looking closer at what it actually did, the hook turned out to be reimplementing
+something Immer’s own API already provides. This piece walks through why.
+
+## The problem produce solves
+
+Immer’s `produce` function takes a base value and a recipe function. Inside the recipe, the
+first argument — the “draft” — looks and behaves like a normal, mutable object, but it’s
+actually a Proxy. Every write gets recorded rather than applied directly; when the recipe
+returns, Immer replays only the recorded writes onto a fresh copy and hands back the result.
+Nothing about the original value ever changes.
+
+That means code inside the recipe can look like ordinary imperative JavaScript — find an item,
+assign a field — while the function as a whole still behaves like a pure, immutable update.
+
+<NaiveVsProduce client:load />
+
+Toggle between the two versions and run the update: same output, very different amount of code
+to get there. The hand-written version needs a new object at every level between the array and
+the field that changed, or it risks mutating shared state. The `produce` version writes to the
+draft and lets Immer sort out which levels need a new object and which don’t.
+
+## Two ways to call produce
+
+`produce` actually has two calling conventions. Pass it a base value and a recipe, and it runs
+the recipe immediately and returns the new value:
+
+```ts
+const next = produce(state, (draft) => {
+  draft.count += 1;
+});
+```
+
+Pass it *only* a recipe, and it returns a new function — a “curried producer” — that takes the
+base value later and returns the result then:
+
+```ts
+const increment = produce((draft) => {
+  draft.count += 1;
+});
+
+const next = increment(state);
+```
+
+That curried form has a shape worth noticing: `(previousState) => nextState`. That’s the exact
+signature a React state setter accepts as its “updater function” argument — the alternative to
+passing a plain value directly:
+
+```ts
+setState((previousState) => nextState);
+```
+
+Which means `setState(produce(recipe))` needs no wrapping at all. The curried producer already
+*is* the updater function the setter wants.
+
+<CurriedForm client:visible />
+
+The two buttons above look interchangeable at a glance, but they aren’t. The direct form
+computes its result from a value captured earlier in the function — call it twice in a row
+before a re-render happens, and both calls start from the same snapshot, so the second call
+overwrites the first instead of building on it. The curried form hands React a function instead
+of a value; React guarantees that each queued updater function runs against the real, most
+recent state, even when several updates are batched into one re-render. That guarantee is the
+whole reason the “pass an updater function” form of `setState` exists, and the curried form of
+`produce` slots into it perfectly.
+
+## Dropping the wrapper
+
+Once that overlap is visible, the custom hook stops earning its keep. It was doing this:
+
+```ts
+function useImmer(initialValue) {
+  const [value, setValue] = useState(initialValue);
+  return [
+    value,
+    (recipe) => setValue(produce(recipe)),
+  ];
+}
+```
+
+Which is just `setValue(produce(recipe))`, given a name. Calling that combination directly at
+the two or three places that need it is no longer code, just one fewer layer to look through:
+
+```ts
+const [products, setProducts] = useState(initialProducts);
+
+function updateProducts(recipe) {
+  setProducts(produce(recipe));
+}
+```
+
+*(No interactive demo for this one — the two snippets above are the whole idea. Removing an
+abstraction is only worth it once the API underneath is doing the same job without it, and here
+it clearly was.)*
+
+## Why unrelated items don’t re-render
+
+The draft-and-replay approach buys something beyond convenience: structural sharing. Immer only
+allocates a new object for a value on the path from the root to whatever the recipe actually
+touched. Everything off that path — sibling array items, untouched nested objects — keeps its
+exact previous reference.
+
+<StructuralSharing client:visible />
+
+Change one item’s price and check the other two afterward: same object, same reference, `===`
+still true. That matters for anything gated on reference equality — `React.memo`, a `useMemo`
+dependency array, a selector that only recomputes when its input object changes. None of that
+has to be told which items changed; it falls out of only cloning the levels that were actually
+written to.
+
+## Mutating what’s already frozen
+
+One more property of the draft-based model is easy to miss until it’s demonstrated directly:
+`produce` works even when the base value is frozen, because the recipe never touches that base
+value at all — only the Proxy standing in for it.
+
+<FrozenDraft client:visible />
+
+Try the direct mutation first: assigning to a frozen object’s property throws, because a `.tsx`
+file is an ES module and modules run in strict mode by default — silent failure only happens in
+non-strict code. Then try `produce` on the same frozen state: it succeeds, because the “mutation”
+inside the recipe was never a write to the frozen object in the first place. This is also the
+underlying reason a TypeScript `Draft<T>` helper type exists in Immer’s type definitions — it
+strips `readonly` modifiers from a type for the duration of the recipe, so code that legitimately
+can’t mutate the base type is still allowed to mutate the draft standing in for it.
+
+## Takeaway
+
+`produce`’s curried form isn’t a convenience wrapper around Immer — it’s the same function,
+called with one argument short, and that shape happens to line up exactly with what a state
+setter’s updater argument expects. Once that’s clear, a hook whose entire job was bridging
+`useState` and `produce` has nothing left to bridge. The two already fit.
