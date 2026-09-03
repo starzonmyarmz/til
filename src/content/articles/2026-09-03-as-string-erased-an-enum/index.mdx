@@ -1,0 +1,156 @@
+---
+title: "A Stray Type Cast That Let Two Radios Be Checked at Once"
+date: 2026-09-03
+description: "Casting an enum-typed value to string erased the type safety that would have caught a real bug in a radio group, and let a free-text field collide with a preset option. A look at how it happened and how a regression test proved the fix."
+tags: ["typescript", "react", "testing"]
+---
+
+import RadioBug from './RadioBug.tsx';
+import TestProof from './TestProof.tsx';
+
+A review form offered a short list of canned reasons for rejecting a submission, plus an
+“Other” option with a free-text field underneath it. Nothing unusual — a radio group, one of
+the options backed by a text input instead of a fixed label. The kind of form every app has a
+few of.
+
+Except this one had a bug: type the *exact* text of one of the canned reasons into the “Other”
+field, and two radio buttons lit up as checked at once. Not a rendering glitch — the component’s
+own state genuinely believed two different options were both selected. The root cause traced
+back to a single type cast, three lines into the component, that had quietly thrown away the
+one piece of type information that would have caught the mistake at compile time.
+
+## The cast that erased the type
+
+The reasons lived in a string enum:
+
+```ts
+enum RejectedReason {
+  SignatureMissing = "Signature is missing",
+  Expired = "Certificate is expired",
+  Other = "Other",
+}
+```
+
+And the component tracked which one was selected like this:
+
+```ts
+const reasons = Object.values(RejectedReason)
+const [selectedReason, setSelectedReason] = useState(reasons[0] as string)
+```
+
+That `as string` looks harmless. `reasons[0]` is already a `RejectedReason`, so casting it to
+`string` — a wider, less specific type — feels like it can only ever be safe. Every
+`RejectedReason` *is* a string, after all.
+
+But that’s exactly the problem. `useState` infers its state type from the initial value it’s
+given. Without the cast, `selectedReason` would have been typed as `RejectedReason` — a closed
+set of three exact values. With the cast in place, TypeScript widened it to plain `string`
+before `useState` ever saw it, so `selectedReason` became a value that could hold *anything*.
+Assigning it the contents of a text input no longer looked like a type error, because as far as
+the type checker was concerned, a `string` is exactly what a text input produces.
+
+The cast didn’t cause the bug by itself. It removed the guardrail that would have flagged the
+next line of code as suspicious.
+
+## One value doing two jobs
+
+The next line was where the actual mistake lived. The “Other” radio’s `value` wasn’t set to
+`RejectedReason.Other` like every other radio in the group — it was set to whatever the user had
+typed into the free-text field:
+
+```ts
+<Radio
+  value={isOther(reason) ? otherText : reason}
+  checked={selectedReason === reason || (isOther(reason) && selectedReason === otherText)}
+  onChange={(e) => setSelectedReason(e.target.value)}
+/>
+```
+
+Once `selectedReason` is a plain `string`, there is no type-level difference between “the user
+picked a preset reason” and “the user typed some text.” Both are just strings sitting in the
+same variable. The `value` prop for the Other radio tries to bridge that by substituting the
+typed text in place of the enum member — which works, right up until the typed text happens to
+collide with one of the other radios’ literal values.
+
+Type “Certificate is expired” into the Other field, and `selectedReason` becomes the string
+`"Certificate is expired"` — which is *also* the exact value of the `Expired` radio. Two radios,
+one shared value, both reporting `checked`.
+
+## Patching over two sources of truth with `||`
+
+The `checked` expression above is the tell. A controlled radio only needs one comparison:
+does this option’s value equal the selected value? Needing an `||` to reconcile a second,
+unrelated comparison — `selectedReason === otherText` — means two different pieces of state are
+being asked to agree on which option is selected, instead of one piece of state owning that
+answer outright.
+
+The fix removes the substitution entirely. Every radio, including Other, uses its own enum
+member as its value; the free-text field is tracked in separate state that only matters when
+`RejectedReason.Other` is the selection:
+
+```ts
+const [selectedReason, setSelectedReason] = useState<RejectedReason>(reasons[0])
+const [otherText, setOtherText] = useState("")
+
+const rejectedReason = selectedReason === RejectedReason.Other ? otherText : selectedReason
+```
+
+```ts
+<Radio
+  value={reason}
+  checked={selectedReason === reason}
+  onChange={(e) => setSelectedReason(e.target.value as RejectedReason)}
+/>
+```
+
+`selectedReason` answers exactly one question — which radio is picked — and nothing else is
+allowed to influence it. `otherText` answers a different question — what did the user type — and
+the two are combined only at the point where the final reason string is actually needed. No
+collision is possible anymore, because nothing ever compares a radio’s identity against a value
+that came from a text field.
+
+The interactive version below reproduces both states side by side. Switch to “Buggy” and type
+the exact label of another option into the Other field:
+
+<RadioBug client:load />
+
+With the cast in place, the Other row’s checked state depends on matching either the enum
+value *or* the typed text — so a coincidental match lights up two rows. Switch to “Fixed” and
+the same input only ever affects the Other row, because the radios no longer share a comparison
+target with the text field.
+
+## Proving the fix with a test that fails first
+
+A fix that “looks right” is still a guess until something demonstrates the old code actually
+breaks and the new code doesn’t. The cheapest way to get that proof is to write the regression
+test against the *broken* version first, watch it fail for the right reason, and only then apply
+the fix and watch it pass:
+
+```ts
+it("keeps only the Other radio checked, even if the typed text matches a preset", () => {
+  fireEvent.change(otherReasonInput, { target: { value: "Certificate is expired" } })
+
+  const checked = screen.getAllByRole("radio").filter((radio) => radio.checked)
+  expect(checked).toHaveLength(1)
+})
+```
+
+Run that against the version with the `as string` cast still in place, and it fails with exactly
+the symptom described above: two checked radios instead of one. Run it again after switching to
+the enum-typed state and removing the value substitution, and it passes. That two-step check
+matters more than it looks — a test that happens to pass against both the broken and fixed
+version isn’t actually testing the bug, it’s just testing that the component renders.
+
+<TestProof client:visible />
+
+## The narrower lesson
+
+`as` casts aren’t inherently dangerous — sometimes the compiler genuinely can’t infer something
+that’s obviously true, and a narrow, well-placed cast is the honest way to tell it so. The
+warning sign here wasn’t the cast’s existence, it was its direction: it took a *narrower*, more
+specific type — a three-member enum — and widened it to something that accepts anything a
+string can hold. Narrowing casts (`unknown` down to a specific shape, `string` down to a union of
+literals) usually add information the compiler couldn’t infer on its own. Widening casts remove
+information the compiler already had. That second kind is worth a second look every time one
+shows up in a diff, because the type checker was doing its job right up until the cast told it
+to stop.
