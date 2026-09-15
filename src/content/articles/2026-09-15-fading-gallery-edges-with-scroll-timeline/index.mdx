@@ -1,0 +1,141 @@
+---
+title: "Fading a Scrollable Gallery's Edges with Nothing but CSS"
+date: 2026-09-15
+description: "A horizontally scrolling row of cards fades at whichever edge still has more content, driven entirely by the row's own scroll position — no scroll listeners, just animation-timeline, @property, and a mask."
+tags: ["css", "animation"]
+---
+
+import ScrollFadeDemo from './ScrollFadeDemo.tsx';
+import PropertyInterpolationDemo from './PropertyInterpolationDemo.tsx';
+import ResponsiveBreakpointDemo from './ResponsiveBreakpointDemo.tsx';
+
+A card gallery that scrolls sideways has a discoverability problem: nothing on screen says there’s more content past the right edge until a stray swipe reveals it. The usual fix is a fade — cards dissolve into the background near whichever edge still has content to scroll toward. Doing that with a scroll event listener and some JavaScript is one option. A more recent set of CSS features makes it possible with none at all.
+
+## Driving an animation from the gallery’s own scroll position
+
+`animation-timeline` normally ties keyframes to wall-clock time, but a scroll-linked timeline ties them to a scrollable element’s scroll offset instead. The gallery becomes its own progress bar:
+
+```css
+#posts {
+  animation: posts-fade linear;
+  animation-duration: auto;
+  animation-timeline: scroll(self inline);
+}
+```
+
+`scroll(self inline)` means: track the horizontal (`inline`) scroll of the element the animation is attached to (`self`), not an ancestor and not the page. `animation-duration: auto` hands duration control to the timeline — the keyframes play across 0% to 100% of the scrollable range, however many pixels that ends up being.
+
+The keyframes drive two custom properties instead of a directly-animatable value like `opacity`, because the visual effect needs to know how far to fade from *each* edge independently:
+
+```css
+@keyframes posts-fade {
+  0% {
+    --fade-left: 0;
+    --fade-right: 3rem;
+  }
+  10% {
+    --fade-left: 3rem;
+    --fade-right: 3rem;
+  }
+  90% {
+    --fade-left: 3rem;
+    --fade-right: 3rem;
+  }
+  100% {
+    --fade-left: 3rem;
+    --fade-right: 0;
+  }
+}
+```
+
+At the very start of the scroll range there’s nothing to the left, so `--fade-left` sits at zero — full opacity all the way to the edge. By 10% scrolled, both edges fade, and that holds until 90%, where the row cuts back to a bare `--fade-right` because the end of the content is in view.
+
+The demo below fakes the same math with a scroll listener instead of a scroll-linked timeline, so it behaves the same way inside an article regardless of browser support, but the visual result matches what the CSS above produces on its own:
+
+<ScrollFadeDemo client:load />
+
+## Why the custom properties need `@property`
+
+The keyframes above animate `--fade-left` and `--fade-right` as if they were ordinary lengths. By default they aren’t. An unregistered custom property is just a string as far as the browser’s style system is concerned — `3rem` and `0` are two arbitrary tokens, not two points on a number line. Animating between them doesn’t ease through intermediate values; it flips from one to the other partway through the animation, because there’s no interpolation to compute.
+
+`@property` fixes that by registering a real type:
+
+```css
+@property --fade-left {
+  inherits: false;
+  initial-value: 0;
+  syntax: "<length>";
+}
+```
+
+`syntax: "<length>"` tells the browser these values are lengths, so `0` and `3rem` are two points three rem apart, not two unrelated strings. That’s what makes the keyframes above actually ease the fade in and out instead of snapping.
+
+The difference is easiest to see side by side — same transition duration, one property registered, one not:
+
+<PropertyInterpolationDemo client:visible />
+
+## Turning the animated values into a fade
+
+Once `--fade-left` and `--fade-right` are real, animated lengths, producing the visual fade is a single `mask-image`:
+
+```css
+#posts {
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    black var(--fade-left),
+    black calc(100% - var(--fade-right)),
+    transparent
+  );
+}
+```
+
+`mask-image` uses the gradient’s luminance to control opacity: black is fully visible, transparent is fully hidden. The gradient stays transparent for `--fade-left` worth of pixels, opaque through the middle, then fades out again over the last `--fade-right` pixels. Because those two lengths are driven by the scroll-linked animation above, the fade distance itself changes as the row scrolls — wide at both ends mid-scroll, collapsed to nothing at whichever edge is fully scrolled past. No separate demo needed here: the scroll demo above already shows this mask in action, since the fade *is* this gradient.
+
+## Falling back safely when a browser doesn’t support it
+
+Scroll-linked animations aren’t supported everywhere yet. Wrapping the whole block in `@supports` means unsupported browsers get a plain scrollable row — no fade, but nothing broken either:
+
+```css
+@supports (animation-timeline: scroll()) {
+  /* @property, @keyframes, and #posts rules go here */
+}
+```
+
+`@supports` checks the *declaration*, not just the property name, so it only matches browsers that actually accept `animation-timeline: scroll()` as a valid value — not ones that merely recognize `animation-timeline` from its time-based use. Everything inside the block is inert until that check passes. No JavaScript feature-detection, no separate stylesheet — an on/off switch at the CSS level, so no demo is needed for it either.
+
+## Nesting a responsive breakpoint ladder inside one selector
+
+A second, unrelated fix landed in the same area: three fixed-width cards per row read fine on a laptop and terribly on a phone, where only a third of one card fit on screen. The fix scales card width across four breakpoints, from a mobile view that shows one full card plus a peek of the next — a visual hint that the row scrolls — up to three full cards at desktop widths:
+
+```css
+.card {
+  flex: 0 0 85%;
+  max-width: 85%;
+
+  @media (min-width: 480px) {
+    flex-basis: 60%;
+    max-width: 60%;
+  }
+
+  @media (min-width: 768px) {
+    flex-basis: 45%;
+    max-width: 45%;
+  }
+
+  @media (min-width: 1024px) {
+    flex-basis: 33.333%;
+    max-width: 33.333%;
+  }
+}
+```
+
+Nesting `@media` directly inside a selector is native CSS now, no preprocessor required. Every breakpoint stays scoped to `.card` without repeating the selector four times at the top level of the file — the rule reads as one escalating ladder instead of four disconnected blocks that happen to share a class name.
+
+The slider below matches each breakpoint boundary against the actual widths from the CSS above:
+
+<ResponsiveBreakpointDemo client:visible />
+
+## Putting it together
+
+None of these features is complicated in isolation — a scroll-linked timeline, a typed custom property, a mask, an `@supports` guard, nested media queries. What makes the combination worth noticing is that all five stack into one effect without a single line of JavaScript or a single resize or scroll event listener. The browser already tracks scroll position and viewport width; the fade and the layout just ask it directly instead of re-deriving that information in a handler. That’s a reasonable default to reach for before writing an effect that does the same job with an extra render cycle attached.
