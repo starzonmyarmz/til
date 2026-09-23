@@ -1,0 +1,168 @@
+---
+title: "An omitted parameter is still a choice — just not yours"
+date: 2026-09-23
+description: "Leaving proration_behavior off a Stripe subscription schedule update hands the decision to Stripe’s default, which bills. Why a conditional kwarg left a gap, and why always sending the value is safer."
+tags: ["stripe", "ruby", "billing", "testing"]
+---
+
+import ProrationSlider from './ProrationSlider.tsx';
+import GateGap from './GateGap.tsx';
+import MatcherDemo from './MatcherDemo.tsx';
+
+Every optional API parameter has a value, whether or not the request includes it. When a key is left out, the server fills it in with a documented default. Most of the time that’s harmless. When the parameter decides whether a customer gets charged, the default becomes a billing policy that nobody on the calling side wrote down.
+
+This post walks through a small fix to a Stripe integration: one keyword argument, `proration_behavior: "none"`, added to three calls. The diff is tiny, but it touches several ideas worth knowing. These include vendor defaults, parameters that exist at two levels, conditional kwargs that test the wrong thing, and what an explicit value does to a test suite.
+
+## What proration is, and what Stripe does by default
+
+*Proration* means charging or crediting for the part of a billing period that has already passed when a plan changes. If a customer moves from a $20/month plan to a $50/month plan halfway through the month, a prorating system credits the unused half of the old plan and charges for the remaining half of the new one.
+
+Stripe’s *subscription schedules* let a subscription move through a series of *phases*. Each phase has its own items, prices, and dates. Updating a schedule means sending the whole list of phases again (a *restatement*). The update endpoint takes an optional top-level `proration_behavior` with three values:
+
+- `create_prorations`: prorate, and leave the result as pending invoice items for the next invoice.
+- `always_invoice`: prorate, and create an invoice for it immediately.
+- `none`: no prorations at all.
+
+According to Stripe’s API reference, this parameter applies when the update changes the billing configuration (price, quantity, and similar) of the *current* phase. The reference also says: “The default value is `create_prorations`.”
+
+So a request that leaves the key out isn’t neutral. If the update touches the current phase’s billing, Stripe prorates.
+
+<ProrationSlider client:load />
+
+What to notice: with `none`, the only difference is what the next invoice looks like. With the default, adjustment lines appear that the calling code never asked for. The demo uses a simplified day-based calculation. Stripe’s real calculation is finer-grained, but the idea is the same.
+
+## Two knobs with the same name
+
+The schedule API has `proration_behavior` in two places:
+
+```ruby
+gateway.update_subscription_schedule(
+  schedule_id,
+  phases: [
+    { items: current_items, start_date: period_start, end_date: renewal },
+    { items: next_items, start_date: renewal, proration_behavior: "none" },
+  ],
+  end_behavior: "release",
+  proration_behavior: "none",
+)
+```
+
+What to notice: the `proration_behavior` inside a phase hash controls what happens when the schedule *transitions into* that phase. The one at the top level controls what happens *right now*, if this update edits the phase already in progress.
+
+This is easy to get wrong. A codebase can be careful about every per-phase value and still leave the top-level one to the default. Both keys have the same name, sit a few lines apart, and look like the same setting. They aren’t. Setting one says nothing about the other.
+
+In this case the money paths were already strict. Any phase that carried an immediate charge got its own per-phase `proration_behavior: "none"`, and the top-level value was added when certain inputs were present. The gap was in the cases where neither happened.
+
+## The conditional kwarg that tested a proxy
+
+The top-level value came from a small helper splatted into the call:
+
+```ruby
+def call
+  gateway.update_subscription_schedule(
+    schedule.id,
+    phases:,
+    end_behavior: "release",
+    **proration_for(immediate_items),
+  )
+end
+
+def proration_for(immediate_items)
+  return { proration_behavior: "none" } if immediate_items.any? || trial_resets.any?
+
+  {}
+end
+```
+
+What to notice: `**{}` adds nothing to the call. When both lists are empty, the key disappears from the request and Stripe’s default applies.
+
+This works as long as “immediate items or trial resets are present” means the same thing as “this update changes the current phase’s billing”. That was true for every path the helper’s author had in mind. It stopped being true for one edge case: a restatement where no items changed, but phase 0 was re-anchored with `billing_cycle_anchor: "phase_start"` while the billing interval was translated (monthly to yearly, for example). Neither list has anything in it, so the helper returns `{}`. But the current phase’s billing configuration *does* change. That is exactly the condition that triggers the default.
+
+The helper was testing a *proxy*: a signal that usually lines up with the real risk. The real risk is whatever Stripe checks internally, and the calling code can’t see that check. Every new kind of phase-0 edit would need someone to remember to extend the proxy.
+
+<GateGap client:visible />
+
+Flip on “re-anchor phase 0” with both lists empty and compare the two modes. The conditional version sends a request with no top-level key, so the effective behavior falls back to `create_prorations`. The unconditional version sends `none` in every scenario.
+
+## The fix: say it every time
+
+The whole production change fits in one hunk per call site:
+
+```ruby
+gateway.update_subscription_schedule(
+  schedule.id,
+  phases:,
+  end_behavior: "release",
+  proration_behavior: "none",
+)
+```
+
+What to notice: no branches. The helper was deleted in the same commit, because once the call is unconditional, `proration_for` has no callers. Dead code removed in the commit that killed it keeps history easy to follow. A reviewer sees the reason for the deletion right next to the deletion.
+
+Two other call sites that restate schedules got the same line. One applies deferred changes at renewal. The other builds fixture subscriptions for manual QA. Neither had ever set the top-level key. Each of them was one future edge case away from the same surprise.
+
+Is `none` right everywhere? For these callers, yes. None of them is meant to charge anything *during* the schedule update. Charges that should happen immediately go through a separate path that has its own explicit setting. The rule is simple: the code that restates the schedule never bills. If a future feature wants a mid-phase proration on purpose, it has to write `create_prorations` in the code. That’s a line a reviewer will notice, not a default that slips through.
+
+(No interactive demo for this section. The snippet above is the core idea.)
+
+### Why unconditional beats a smarter condition
+
+The other way to fix it is a better proxy: add `|| reanchoring?` to the guard. That fixes today’s case and keeps the same shape of bug. The next new phase-0 edit needs another clause, and forgetting it fails silently, in production, on an invoice.
+
+An unconditional value flips the failure mode. The worst outcome of always sending `none` is a missing proration, and that would show up while testing the feature that wanted it. The worst outcome of a gated value is an unexpected charge, which shows up in a customer support ticket.
+
+A general rule follows: **when an optional parameter has a default with side effects, and the caller has one consistent answer, send the answer every time.** Keep conditionals for cases where the answer really does change.
+
+## What an explicit value does to the tests
+
+Adding one keyword to a call that dozens of specs check exactly produced a large, dull test diff. The follow-up commit touched five spec files and added `proration_behavior: "none"` to roughly sixty expectations.
+
+That cost is the point. Those specs used exact argument matching:
+
+```ruby
+expect(gateway).to have_received(:update_subscription_schedule).with(
+  "sub_sched_1",
+  phases: expected_phases,
+  end_behavior: "release",
+  proration_behavior: "none",
+)
+```
+
+What to notice: an exact `with(...)` fails on *extra* keys as well as missing ones. Before the fix, these expectations were quietly asserting that the top-level key was *absent*. They locked in the risky behavior. Each one had to be updated by hand, and each update was a chance to ask: “does this scenario actually want an immediate charge?” The commit message records the answer: none of them did.
+
+The branch also added one targeted regression test for the case that used to slip through:
+
+```ruby
+describe "a restatement with no immediate items and no trial resets" do
+  it "still sends proration_behavior: none on the top-level call" do
+    described_class.call(
+      organization,
+      subscription:,
+      immediate_items: [],
+      deferred_items: [],
+      trial_resets: [],
+    )
+
+    expect(gateway).to have_received(:update_subscription_schedule).with(
+      anything,
+      hash_including(proration_behavior: "none"),
+    )
+  end
+end
+```
+
+What to notice: this test uses `hash_including`, not an exact match. It cares about one property and nothing else. The regression it guards against is “the key went missing”, so that’s the only thing it checks. A later change to phase layout won’t break it for unrelated reasons.
+
+The two matcher styles do different jobs. Exact matches pin the full request shape and catch accidental additions. `hash_including` pins a single invariant and survives unrelated churn. A suite that uses both gets broad coverage from the first kind and a clearly named guard from the second.
+
+<MatcherDemo client:visible />
+
+Try removing `proration_behavior` from the sent payload. Both matchers fail, and the targeted test’s name explains why. Then add an unrelated key. Only the exact matcher complains.
+
+## Takeaways
+
+- **Omitting an optional parameter delegates the decision.** Look up the default before deciding that leaving a key out is safe, especially when the parameter touches money.
+- **Same name doesn’t mean same knob.** Stripe’s top-level and per-phase `proration_behavior` govern different moments. Setting one doesn’t cover the other.
+- **Conditional kwargs that test a proxy drift.** `**helper(...)` returning `{}` hides a missing key. If the guard doesn’t match the vendor’s real trigger, edge cases land on the default.
+- **When the answer is always the same, always send it.** An explicit value is also documentation. The dead helper goes away in the same commit.
+- **Exact-match specs encode absence too.** A wide test diff after a small fix is a free audit. Pair it with one `hash_including` regression test that states the invariant by name.
