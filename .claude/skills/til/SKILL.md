@@ -1,15 +1,14 @@
 ---
 description: Turn the code Claude just finished into a TIL article for the user's blog. Writes an MDX post with inline React demo components into $TIL_DIR/src/content/articles/YYYY-MM-DD-<slug>/, commits + pushes, waits for GitHub Pages to deploy, and opens the live article in the browser. Use when the user says "/til" or asks Claude to write a TIL entry about the recent work.
-user_invocable: true
 ---
 
 # TIL — blog article from recent code
 
-Blog is an Astro + MDX + React site deployed to GitHub Pages. Articles are folders in `src/content/articles/` following the pattern `YYYY-MM-DD-<kebab-topic>/` with an `index.mdx` and sibling `.tsx` demo components.
+Blog: Astro + MDX + React site, deployed to GitHub Pages. Articles are folders in `src/content/articles/` following pattern `YYYY-MM-DD-<kebab-topic>/` with `index.mdx` and sibling `.tsx` demo components.
 
 ## Config
 
-The skill reads two required env vars:
+Skill reads two required env vars:
 
 - `TIL_DIR` — absolute path to the local til repo (e.g. `$HOME/Code/til`)
 - `TIL_URL` — live site base URL, no trailing slash (e.g. `https://til.example.com`)
@@ -19,9 +18,9 @@ Optional:
 - `TIL_DEPLOY_WORKFLOW` — GitHub Actions workflow name. Default: `Deploy to GitHub Pages`.
 - `TIL_BRANCH` — deploy branch. Default: `main`.
 
-If `TIL_DIR` or `TIL_URL` is unset, stop and tell the user to export them (e.g. in `~/.zshrc`). Do not guess.
+If `TIL_DIR` or `TIL_URL` unset, stop, tell user to export them (e.g. in `~/.zshrc`). Do not guess.
 
-Sanity-check at the start of the run:
+Sanity-check at run start:
 
 ```bash
 : "${TIL_DIR:?set TIL_DIR to your til repo path}"
@@ -29,25 +28,30 @@ Sanity-check at the start of the run:
 test -d "$TIL_DIR/src/content/articles" || { echo "TIL_DIR ($TIL_DIR) does not look like the til repo"; exit 1; }
 ```
 
-## Effort hint
+## Scripts
 
-Keep thinking light. Don't pre-plan prose in detail — write it directly into `index.mdx`. Parallelize all file writes. Don't re-read reference articles unless you need a concrete styling example. Target: commit + push in under ~2 minutes of wall time.
+Mechanical steps below are scripted in `scripts/` (sibling to this file) — call them instead of retyping the shell. `${CLAUDE_SKILL_DIR}` = this skill's own directory.
+
+- `scripts/context.sh` — picks scope (uncommitted > branch-vs-main/master > last 3 commits), prints the diff. Run in the project's cwd.
+- `scripts/check-slug.sh <slug>` — collision check + `mkdir -p`. Prints the article dir path, or exits 2 if it already exists.
+- `scripts/publish.sh <slug> "<title>"` — build, commit, push, poll for the deploy run. Prints `LIVE_URL=` and `RUN_ID=`, then exits (does not wait for deploy).
+- `scripts/watch-deploy.sh <run_id> <slug>` — waits for the run, opens the live URL on success, dumps failed logs on failure. Run with `run_in_background: true`.
+
+## Pace and done condition
+
+Don't pre-plan prose in chat — write directly into `index.mdx`. Parallelize all file writes. Don't re-read reference articles unless a concrete styling example needed. Target: commit + push under ~2 minutes wall time.
+
+Done when: `publish.sh` printed `LIVE_URL`, the URL was reported, and `watch-deploy.sh` exited (live article opened, or failure logs surfaced). No step between slug check and publish needs the user — keep going unless `check-slug.sh` exits 2 or scope is ambiguous.
 
 ---
 
 ## 1. Identify the recent code
 
-Find the scope in this order:
+Run `scripts/context.sh` in user's *current working directory* (project just worked in), not `$TIL_DIR`. TIL is *about* that work; article lives in til repo. It picks scope automatically (uncommitted > branch commits > last 3 commits) and prints the relevant diff.
 
-1. Uncommitted changes — `git status --porcelain` + `git diff HEAD`.
-2. Branch commits not on `main`/`master` — `git log --oneline main..HEAD` + `git diff main...HEAD`.
-3. Last 3 commits — `git log -3 -p`.
+If it exits with `NOT_A_GIT_REPO`, or the diff is empty, ask which scope.
 
-Run these in the user's *current working directory* (the project the user just worked in), not in `$TIL_DIR`. The TIL is *about* that work; the article lives in the til repo.
-
-If no repo / no changes, ask which scope.
-
-Also scan the current conversation for non-code context: decisions, trade-offs, why. That's the teaching gold the diff can't capture.
+Also scan conversation for non-code context: decisions, trade-offs, why. That's teaching gold the diff can't capture.
 
 ## 2. Extract 3–7 teachable concepts
 
@@ -55,25 +59,13 @@ For each: one-line what, one-line why it matters here, one specific demo idea. D
 
 ## Length target
 
-Aim for a **5–10 minute read**: roughly **1,250–2,500 words** of prose (code blocks and demos don't count toward the read time). If the topic is thin, fewer concepts with deeper explanation beats padding. If it's rich, cut the weakest concept rather than ship a 15-minute article.
+Aim for **5–10 minute read**: roughly **1,250–2,500 words** of prose (code blocks/demos don't count toward read time). Thin topic: fewer concepts, deeper explanation beats padding. Rich topic: cut weakest concept rather than ship 15-minute article.
 
 ## 3. Pick slug + create article dir
 
-Slug format: `YYYY-MM-DD-<kebab-topic>`. Date is today. Topic is 2–5 kebab words capturing the insight (e.g. `why-usememo-fixed-rerenders`, not `react-stuff`).
+Slug format: `YYYY-MM-DD-<kebab-topic>`. Date is today. Topic: 2–5 kebab words capturing the insight (e.g. `why-usememo-fixed-rerenders`, not `react-stuff`).
 
-Check existing dirs to avoid collision:
-
-```bash
-ls "$TIL_DIR/src/content/articles/"
-```
-
-If `$TIL_DIR/src/content/articles/<slug>/` already exists, ask before overwriting.
-
-Create the directory:
-
-```bash
-mkdir -p "$TIL_DIR/src/content/articles/<slug>"
-```
+Run `scripts/check-slug.sh <slug>`. Exit 2 means the dir already exists — ask before overwriting. Otherwise it creates the dir and prints its path.
 
 ## 4. Write index.mdx + demos in parallel
 
@@ -93,7 +85,7 @@ tags: ["react", "typescript"]
 ---
 ```
 
-**Frontmatter strings are plain text.** `title` and `description` render as-is on the index page — no markdown parsing. No backticks, asterisks, links, or escaped quotes. Write around code terms ("as-casts" not `` `as` casts ``) instead of using inline code.
+**Frontmatter strings are plain text.** `title`/`description` render as-is on index page — no markdown parsing. No backticks, asterisks, links, escaped quotes. Write around code terms ("as-casts" not `` `as` casts ``) instead of inline code.
 
 **Imports.** MDX imports sibling components with relative paths:
 
@@ -101,7 +93,7 @@ tags: ["react", "typescript"]
 import MyDemo from './MyDemo.tsx';
 ```
 
-Render them with a `client:*` directive so React hydrates. Use `client:load` only for the **first** demo in the article; every subsequent demo gets `client:visible` (hydrates when scrolled into view) so a five-demo article doesn't hydrate all five React islands on page load:
+Render with a `client:*` directive so React hydrates. Use `client:load` only for **first** demo; every subsequent demo gets `client:visible` (hydrates when scrolled into view) so five-demo article doesn't hydrate all five React islands on page load:
 
 ```mdx
 <FirstDemo client:load />
@@ -110,7 +102,7 @@ Render them with a `client:*` directive so React hydrates. Use `client:load` onl
 <ThirdDemo client:visible />
 ```
 
-**Voice/prose rules.** Impersonal. **No personal pronouns** — no `I`, `we`, `you`, `my`, `our`, `your`. **No references to people or agents** — no `Claude`, `the human`, `the user`, `the author`, `the AI`, `the assistant`. Focus on the code, the concepts, and what the change does. Prefer the imperative or passive voice when describing actions ("Wrap the prop in `useMemo`" / "The component was re-rendering on every keystroke"). State observations as facts about the code, not as a narrator's experience.
+**Voice/prose rules.** Impersonal. **No personal pronouns** — no `I`, `we`, `you`, `my`, `our`, `your`. **No references to people or agents** — no `Claude`, `the human`, `the user`, `the author`, `the AI`, `the assistant`. Focus on code, concepts, what the change does. Prefer imperative/passive voice for actions ("Wrap the prop in `useMemo`" / "The component was re-rendering on every keystroke"). State observations as facts about the code, not narrator's experience.
 
 Examples:
 - Bad: "I wrapped the prop in `useMemo` because the human's list was thrashing."
@@ -120,7 +112,7 @@ Examples:
 - Bad: "Claude's fix was to switch to `Record`."
 - Good: "The fix: switch to `Record`."
 
-Warm and specific is still the goal — impersonal does not mean dry. Define jargon inline. Short paragraphs (3–5 lines). Include real code snippets in fenced blocks with a short "what to notice" caption underneath.
+Warm and specific still the goal — impersonal doesn't mean dry. Define jargon inline. Short paragraphs (3–5 lines). Include real code snippets in fenced blocks with a short "what to notice" caption underneath.
 
 **Smart punctuation in prose.** Use typographic characters in article prose and frontmatter (`title`, `description`):
 
@@ -128,15 +120,15 @@ Warm and specific is still the goal — impersonal does not mean dry. Define jar
 - Double quotes: `“` `”` (U+201C/U+201D).
 - Em dash `—` (U+2014) for breaks; en dash `–` (U+2013) for ranges; ellipsis `…` (U+2026) for trailing-off.
 
-**Keep ASCII in code.** Inside fenced code blocks, inline `` `code` ``, demo `.tsx` files, and any string literal that represents code or a user-typed value, use plain ASCII (`'`, `"`, `--`, `...`). Smart quotes break syntax and look wrong in a monospace context. The split: prose reads like a book, code reads like code.
+**Keep ASCII in code.** Inside fenced code blocks, inline `` `code` ``, demo `.tsx` files, and any string literal that represents code or a user-typed value, use plain ASCII (`'`, `"`, `--`, `...`). Smart quotes break syntax and look wrong in a monospace context. Split: prose reads like a book, code reads like code.
 
-**No real source paths or proprietary names.** The blog is public; the human's day-job repo is not. Do not name actual file paths, internal route paths, internal model/table names, internal product or company names, or anything else that would only make sense to a coworker. Generalize:
+**No real source paths or proprietary names.** Blog is public; human's day-job repo isn't. Don't name actual file paths, internal route paths, internal model/table names, internal product or company names, or anything else that would only make sense to a coworker. Generalize:
 
 - `app/javascript/components/billing/edit_address_modal.tsx` → "a billing address modal" or just "the form component"
 - `/org_deletions/${id}` → `/jobs/${id}` or "a job-status endpoint"
 - `delete_organization_modal.tsx` → "a delete-confirmation modal"
 
-Generic function and variable names (`handleFieldChange`, `formErrors`, `checkForCompletion`) are fine — they describe a pattern, not a private codebase. The bar: a reader who has never seen the source repo should still get the lesson, and nothing in the article should leak details specific to the human's employer.
+Generic function/variable names (`handleFieldChange`, `formErrors`, `checkForCompletion`) fine — describe a pattern, not a private codebase. Bar: a reader who has never seen the source repo should still get the lesson, and nothing in the article should leak details specific to the human's employer.
 
 **Demo patterns.** Every major concept gets a demo or an explicit "(no interactive demo — the snippet above is the core idea)" note. Patterns:
 
@@ -148,7 +140,7 @@ Generic function and variable names (`handleFieldChange`, `formErrors`, `checkFo
 **Demo component rules.**
 
 - Plain React + TypeScript. `useState`, `useMemo`, etc. — whatever the article teaches.
-- No new npm deps unless a demo truly needs one. The site already has React 19 + Astro 6.
+- No new npm deps unless a demo truly needs one. Site already has React 19 + Astro 6.
 - **Always wrap the body in `<Demo>`.** Never hand-roll `<div className="demo"><div className="demo-label">…` — that's exactly what `<Demo>` renders, and hand-rolling it means missing future styling changes.
 - **Reach for the shared demo library first.** It lives at `src/components/demo/` and exposes `Demo`, `Toolbar`, `Spacer`, `Button`, `ToggleGroup`, `Input`, `Select`, `Field`, `Output`, `OutputRow`, `Panel`, `PanelGrid`, `Console`, `useConsoleLog`, `Hint`, `Row`, `Slider`, `Badge`, `CanvasStage`, `NativeDialog`. Import from the article folder with a relative path (`../../../components/demo`). Use these instead of re-defining inline styles for buttons, mono inputs, dropdowns, output panels, log output, canvases, or `<dialog>` wiring. CSS variables `var(--mono)`, `var(--ink)`, `var(--ink-soft)`, `var(--ink-faint)`, `var(--rule)`, `var(--bg)`, `var(--bg-elev)`, plus tone tokens `var(--tone-good|warn|bad)` exist; the components already use them.
 - Keep demos small and self-contained. One file, default export, no external state.
@@ -185,7 +177,7 @@ import {
 - Long list of option chips (scenarios, samples, presets) → `<ToggleGroup variant="pill">`.
 - Dropdown with more options than fit as chips, or a native-select-specific lesson → `<Select>`.
 - Step-through "Next" buttons → `<Button>` inside `<Toolbar>`.
-- Slider scrubber with a value readout → `<Slider>` (use `format` to render units/decimals). Raw `<input type="range">` is still fine for sliders that don't need a readout; CSS already styles it inside `.demo`.
+- Slider scrubber with a value readout → `<Slider>` (use `format` to render units/decimals). Raw `<input type="range">` still fine for sliders that don't need a readout; CSS already styles it inside `.demo`.
 - Showing computed output (raw → resolved → range) → `<Output>` with `<OutputRow>` children (grid mode is the default).
 - Free-form block that doesn't fit a label/value grid (a JSON dump, a code preview, a single formatted result) → `<Panel>`. Two or more side by side (raw vs. parsed) → wrap them in `<PanelGrid columns={2}>`.
 - Log/trace output with colored lines → `useConsoleLog()` for the push/cap/reset state, feed its `lines` into `<Console lines={lines} />`. Don't hand-roll `setLines((prev) => [...prev.slice(-n), entry])` — that's exactly what the hook replaces.
@@ -196,58 +188,22 @@ import {
 
 If the demo needs a control the library doesn't ship, write it inline with the same CSS variables (`var(--mono)`, `var(--rule)`, `var(--ink-soft)`, `var(--tone-*)`) so it visually matches the rest.
 
-**Reference article.** If a brand-new pattern (not covered above) needs a styling cue, peek at one existing demo under `$TIL_DIR/src/content/articles/`. Pick the most recent by slug date. Don't read more than one.
+**Reference article.** If a brand-new pattern (not covered above) needs a styling cue, peek at one existing demo under `$TIL_DIR/src/content/articles/`. Pick most recent by slug date. Don't read more than one.
 
-## 5. Build check
+## 5–6. Build, commit, push, find deploy run
 
-Before committing, run a local build to catch MDX/TS errors the deploy would reject:
+Run `scripts/publish.sh <slug> "<title>"`. It builds (`npm run build`), commits, pushes, and polls for the matching deploy run by SHA (avoids grabbing a prior push's still-registering run). Prints `LIVE_URL=...` and `RUN_ID=...` on success, then exits — it does not wait for the deploy itself.
 
-```bash
-cd "$TIL_DIR" && npm run build
-```
+Commit message it writes: `Add TIL: <title>` — single line, conventional. No Claude co-author trailer, this is user's personal blog.
 
-If the build fails, fix the errors and rebuild. Don't push broken articles.
+If build fails, script exits nonzero before committing — fix errors and rerun. Don't push broken articles. If `RUN_ID_NOT_FOUND` after polling, retry once more before giving up.
 
-## 6. Commit, push, wait for deploy, open
+**Report live URL to user now** — the `LIVE_URL` line. Commit is pushed; article is final. Don't make user wait on deploy to learn where it lands.
 
-From `$TIL_DIR`:
+Then run `scripts/watch-deploy.sh <run_id> <slug>` with `run_in_background: true` so user isn't blocked for the 1–3 min Pages build. Harness re-invokes when it exits:
 
-```bash
-cd "$TIL_DIR"
-git add "src/content/articles/<slug>"
-git commit -m "Add TIL: <title>"
-git push origin "${TIL_BRANCH:-main}"
-```
-
-Commit message: single line, conventional. No Claude co-author trailer — this is the user's personal blog.
-
-Then find the deploy run **for this exact commit** (match on SHA — `--limit 1` alone can grab a prior push's run that hasn't been superseded yet, or one still registering):
-
-```bash
-WORKFLOW="${TIL_DEPLOY_WORKFLOW:-Deploy to GitHub Pages}"
-SHA=$(git rev-parse HEAD)
-RUN_ID=""
-for _ in 1 2 3 4 5 6 7 8 9 10; do
-  RUN_ID=$(gh run list --workflow "$WORKFLOW" -c "$SHA" --limit 1 --json databaseId -q '.[0].databaseId')
-  [ -n "$RUN_ID" ] && break
-done
-echo "$RUN_ID"
-```
-
-The run can take a few seconds to register — the loop polls (no foreground `sleep`; this harness blocks it). If `RUN_ID` is still empty after the loop, retry the loop once more before giving up.
-
-**Report the live URL to the user now** — `$TIL_URL/<slug>/`. The commit is pushed; the article is final. Don't make the user wait on the deploy to learn where it lands.
-
-Then watch the deploy **in the background** so the user isn't blocked for the 1–3 min Pages build:
-
-```bash
-gh run watch "$RUN_ID" --exit-status
-```
-
-Run that with `run_in_background: true`. The harness re-invokes you when it exits:
-
-- **Exit 0** → open the live article: `open "$TIL_URL/<slug>/"` and confirm it's live.
-- **Non-zero** → surface the failure (`gh run view "$RUN_ID" --log-failed | tail -50`) and stop. Do not open a broken URL; tell the user the deploy failed.
+- **Exit 0** → it already opened the live article. Confirm it's live.
+- **Non-zero** → it already dumped failed logs (`gh run view --log-failed`). Surface that and stop. Don't open broken URL; tell user deploy failed.
 
 ---
 
@@ -255,7 +211,8 @@ Run that with `run_in_background: true`. The harness re-invokes you when it exit
 
 - Length lands in target (see **Length target** above).
 - Every concept has a demo or an explicit no-demo note.
-- Prose readable by someone who hasn't seen the original code; jargon defined inline.
+- Prose readable by someone who hasn't seen original code; jargon defined inline.
+- Claims about library/browser/runtime behavior are backed by the diff, a demo, or docs. Anything unconfirmed: cut it or soften it in the article, and list it for the user alongside the `LIVE_URL` report, with where you looked.
 - `npm run build` passes locally before pushing.
 - No proprietary paths/names leak; generic function/variable names only (see privacy rules in step 4).
 - Frontmatter `date` matches the slug date. Title is a human sentence, not a slug echo.
