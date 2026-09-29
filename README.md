@@ -43,15 +43,25 @@ New posts are typically scaffolded by the [`/til` Claude Code skill](.claude/ski
 To use this skill against a different blog repo:
 
 1. Copy `.claude/skills/til/SKILL.md` into your target repo at `.claude/skills/til/SKILL.md` (project-scoped) or `~/.claude/skills/til/SKILL.md` (global, works across all repos).
-2. Set two env vars (e.g. in `~/.zshrc`):
+2. Set three env vars (e.g. in `~/.zshrc`):
 
    ```bash
    export TIL_DIR="$HOME/path/to/your/til-repo"
    export TIL_URL="https://your-site.example.com"
+   export TIL_SKILL_DIR="$HOME/path/to/wherever/you/copied/.claude/skills/til"
    ```
+
+   `TIL_SKILL_DIR` is the folder holding the copied `SKILL.md` and its sibling `scripts/`. It is
+   separate from `TIL_DIR` because the skill may be installed global while writing into a repo
+   elsewhere.
 
 3. Optional overrides: `TIL_DEPLOY_WORKFLOW` (default `Deploy to GitHub Pages`), `TIL_BRANCH` (default `main`).
 4. Restart Claude Code, then run `/til` after making a change worth writing up.
+
+The skill also loads in any agent harness that discovers `SKILL.md` files, such as
+[OpenCode](https://opencode.ai) — it reads this same file from `~/.claude/skills/` or
+`.opencode/skills/`. `TIL_SKILL_DIR` keeps it portable across both, since neither harness exposes
+the skill's own directory to the agent as a variable.
 
 The skill assumes an Astro + MDX + React content collection shaped like this one (`src/content/articles/YYYY-MM-DD-<slug>/index.mdx`) and a shared demo component library at `src/components/demo/`.
 

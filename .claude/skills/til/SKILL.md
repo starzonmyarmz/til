@@ -1,4 +1,5 @@
 ---
+name: til
 description: Turn the code Claude just finished into a TIL article for the user's blog. Writes an MDX post with inline React demo components into $TIL_DIR/src/content/articles/YYYY-MM-DD-<slug>/, commits + pushes, waits for GitHub Pages to deploy, and opens the live article in the browser. Use when the user says "/til" or asks Claude to write a TIL entry about the recent work.
 ---
 
@@ -8,29 +9,39 @@ Blog: Astro + MDX + React site, deployed to GitHub Pages. Articles are folders i
 
 ## Config
 
-Skill reads two required env vars:
+Skill reads three required env vars:
 
 - `TIL_DIR` — absolute path to the local til repo (e.g. `$HOME/Code/til`)
 - `TIL_URL` — live site base URL, no trailing slash (e.g. `https://til.example.com`)
+- `TIL_SKILL_DIR` — absolute path to this skill's directory, i.e. the folder containing this `SKILL.md` and its sibling `scripts/` (e.g. `$HOME/Code/til/.claude/skills/til` when project-scoped, or `$HOME/.claude/skills/til` when installed globally)
 
 Optional:
 
 - `TIL_DEPLOY_WORKFLOW` — GitHub Actions workflow name. Default: `Deploy to GitHub Pages`.
 - `TIL_BRANCH` — deploy branch. Default: `main`.
 
-If `TIL_DIR` or `TIL_URL` unset, stop, tell user to export them (e.g. in `~/.zshrc`). Do not guess.
+If any of the three required vars is unset, stop, tell user to export them (e.g. in `~/.zshrc`). Do not guess.
+
+`TIL_SKILL_DIR` is required rather than assumed because the skill's install location varies —
+project-scoped vs. global — and the agent's working directory is the *other* project, so there is
+no reliable relative path to the scripts from cwd. Agent harnesses that expand a skill-directory
+variable natively may substitute it, but the env var works everywhere and stays portable.
 
 Sanity-check at run start:
 
 ```bash
 : "${TIL_DIR:?set TIL_DIR to your til repo path}"
 : "${TIL_URL:?set TIL_URL to the live site base URL}"
+: "${TIL_SKILL_DIR:?set TIL_SKILL_DIR to this skill's directory}"
 test -d "$TIL_DIR/src/content/articles" || { echo "TIL_DIR ($TIL_DIR) does not look like the til repo"; exit 1; }
+test -d "$TIL_SKILL_DIR/scripts" || { echo "TIL_SKILL_DIR ($TIL_SKILL_DIR) has no scripts/ dir"; exit 1; }
 ```
 
 ## Scripts
 
-Mechanical steps below are scripted in `scripts/` (sibling to this file) — call them instead of retyping the shell. `${CLAUDE_SKILL_DIR}` = this skill's own directory.
+Mechanical steps below are scripted in `scripts/` (sibling to this file) — call them instead of
+retyping the shell. Anchor every invocation at `"$TIL_SKILL_DIR"/scripts/<name>.sh`, because cwd
+is the project being written about, not this skill's directory.
 
 - `scripts/context.sh` — picks scope (uncommitted > branch-vs-main/master > last 3 commits), prints the diff. Run in the project's cwd.
 - `scripts/check-slug.sh <slug>` — collision check + `mkdir -p`. Prints the article dir path, or exits 2 if it already exists.
@@ -47,7 +58,7 @@ Done when: `publish.sh` printed `LIVE_URL`, the URL was reported, and `watch-dep
 
 ## 1. Identify the recent code
 
-Run `scripts/context.sh` in user's *current working directory* (project just worked in), not `$TIL_DIR`. TIL is *about* that work; article lives in til repo. It picks scope automatically (uncommitted > branch commits > last 3 commits) and prints the relevant diff.
+Run `"$TIL_SKILL_DIR"/scripts/context.sh` in user's *current working directory* (project just worked in), not `$TIL_DIR`. TIL is *about* that work; article lives in til repo. It picks scope automatically (uncommitted > branch commits > last 3 commits) and prints the relevant diff.
 
 If it exits with `NOT_A_GIT_REPO`, or the diff is empty, ask which scope.
 
@@ -65,7 +76,7 @@ Aim for **5–10 minute read**: roughly **1,250–2,500 words** of prose (code b
 
 Slug format: `YYYY-MM-DD-<kebab-topic>`. Date is today. Topic: 2–5 kebab words capturing the insight (e.g. `why-usememo-fixed-rerenders`, not `react-stuff`).
 
-Run `scripts/check-slug.sh <slug>`. Exit 2 means the dir already exists — ask before overwriting. Otherwise it creates the dir and prints its path.
+Run `"$TIL_SKILL_DIR"/scripts/check-slug.sh <slug>`. Exit 2 means the dir already exists — ask before overwriting. Otherwise it creates the dir and prints its path.
 
 ## 4. Write index.mdx + demos in parallel
 
@@ -192,7 +203,7 @@ If the demo needs a control the library doesn't ship, write it inline with the s
 
 ## 5–6. Build, commit, push, find deploy run
 
-Run `scripts/publish.sh <slug> "<title>"`. It builds (`npm run build`), commits, pushes, and polls for the matching deploy run by SHA (avoids grabbing a prior push's still-registering run). Prints `LIVE_URL=...` and `RUN_ID=...` on success, then exits — it does not wait for the deploy itself.
+Run `"$TIL_SKILL_DIR"/scripts/publish.sh <slug> "<title>"`. It builds (`npm run build`), commits, pushes, and polls for the matching deploy run by SHA (avoids grabbing a prior push's still-registering run). Prints `LIVE_URL=...` and `RUN_ID=...` on success, then exits — it does not wait for the deploy itself.
 
 Commit message it writes: `Add TIL: <title>` — single line, conventional. No Claude co-author trailer, this is user's personal blog.
 
@@ -200,7 +211,7 @@ If build fails, script exits nonzero before committing — fix errors and rerun.
 
 **Report live URL to user now** — the `LIVE_URL` line. Commit is pushed; article is final. Don't make user wait on deploy to learn where it lands.
 
-Then run `scripts/watch-deploy.sh <run_id> <slug>` with `run_in_background: true` so user isn't blocked for the 1–3 min Pages build. Harness re-invokes when it exits:
+Then run `"$TIL_SKILL_DIR"/scripts/watch-deploy.sh <run_id> <slug>` with `run_in_background: true` so user isn't blocked for the 1–3 min Pages build. Harness re-invokes when it exits:
 
 - **Exit 0** → it already opened the live article. Confirm it's live.
 - **Non-zero** → it already dumped failed logs (`gh run view --log-failed`). Surface that and stop. Don't open broken URL; tell user deploy failed.
